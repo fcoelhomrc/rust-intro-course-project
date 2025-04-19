@@ -1,10 +1,17 @@
 use chrono::{DateTime, Local};
+use itertools::iproduct;
 use std::collections::HashMap;
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 type RowId = usize;
 type ShelfId = usize;
 type ZoneId = usize;
+
+#[derive(Debug)]
+struct ItemPosition {
+    position: (RowId, ShelfId, ZoneId)
+}
+
 
 #[derive(Debug)]
 enum Quality {
@@ -64,40 +71,34 @@ trait AllocStrategy {
     fn alloc(
         &self,
         item: &Item,
-        inventory: &HashMap<RowId, HashMap<ShelfId, HashMap<ZoneId, Item>>>,
+        inventory: &HashMap<(RowId, ShelfId, ZoneId), Item>,
     ) -> Option<(RowId, ShelfId, ZoneId)>;
 }
 
 #[derive(Debug)]
-struct Allocator {}
-impl AllocStrategy for Allocator {
+struct RoundRobinAllocator {}
+impl AllocStrategy for RoundRobinAllocator {
     fn alloc(
         &self,
-        item: &Item,  // TODO: handle different variants of Quality
-        inventory: &HashMap<RowId, HashMap<ShelfId, HashMap<ZoneId, Item>>>,
+        item: &Item, // TODO: handle different variants of Quality
+        inventory: &HashMap<(RowId, ShelfId, ZoneId), Item>,
     ) -> Option<(RowId, ShelfId, ZoneId)> {
         // round-robin
-        for row in 0..MAX_INVENTORY_SIZE {
-            for shelf in 0..MAX_INVENTORY_SIZE {
-                for zone in 0..MAX_INVENTORY_SIZE {
-                    match inventory
-                        .get(&row)
-                        .and_then(|shelf_map| shelf_map.get(&shelf))
-                        .and_then(|zone_map| zone_map.get(&zone))
-                    {
-                        Some(_) => continue,
-                        None => {
-                            return Some((row, shelf, zone));
-                        }
-                    }
-                }
+        for (row, shelf, zone) in iproduct!(
+            0..MAX_INVENTORY_SIZE,
+            0..MAX_INVENTORY_SIZE,
+            0..MAX_INVENTORY_SIZE
+        ) {
+            if inventory.get(&(row, shelf, zone)).is_none() {
+                return Some((row, shelf, zone));
             }
         }
         None
     }
 }
 
-// struct Allocator2 {}
+// TODO: implement GreedyAllocator (shortest distance)
+struct GreedyAllocator {}
 // impl AllocStrategy for Allocator2 {}
 
 // TODO: should be selectable AT RUN TIME
@@ -109,7 +110,7 @@ where
     A: AllocStrategy,
 {
     // Row -> Shelf -> Zone -> Option<Item>
-    inventory: HashMap<RowId, HashMap<ShelfId, HashMap<ZoneId, Item>>>,
+    inventory: HashMap<(RowId, ShelfId, ZoneId), Item>,
     item_map: HashMap<usize, Vec<ItemInfo>>,
     allocator: A,
 }
@@ -135,31 +136,22 @@ where
 
     fn _insert_item(&mut self, row: usize, shelf: usize, zone: usize, item: Item) {
         self.inventory
-            .entry(row)
-            .or_default()
-            .entry(shelf)
-            .or_default()
-            .insert(zone, item);
+            .entry((row, shelf, zone))
+            .or_insert(item);
     }
 
     fn get_item(&self, row: usize, shelf: usize, zone: usize) -> Option<&Item> {
-        self.inventory
-            .get(&row)
-            .and_then(|shelf_map| shelf_map.get(&shelf))
-            .and_then(|zone_map| zone_map.get(&zone))
+        self.inventory.get(&(row, shelf, zone))
     }
 
     fn remove_item(&mut self, row: usize, shelf: usize, zone: usize) -> Option<Item> {
-        self.inventory
-            .get_mut(&row)
-            .and_then(|shelf_map| shelf_map.get_mut(&shelf))
-            .and_then(|zone_map| zone_map.remove(&zone))
+        self.inventory.remove(&(row, shelf, zone))
     }
 }
 
 fn main() {
     println!("Hello, world!");
-    let mut inv = Manager::new(Allocator {});
+    let mut inv = Manager::new(RoundRobinAllocator {});
     println!("{:#?}", inv);
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
     println!("{:#?}", inv);
