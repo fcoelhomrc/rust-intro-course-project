@@ -232,7 +232,7 @@ where
         self.inventory.remove(&Slot::from((row, shelf, zone)))
     }
 
-    fn sorted_inventory(&self) -> Vec<&Item> {
+    fn ord_by_name(&self) -> Vec<&Item> {
         // convert to Vec for O(N log(N)) sorting
         let mut items: Vec<&Item> = self.inventory.values().collect();
         items.sort_by(|a, b| a.name.cmp(&b.name));
@@ -250,7 +250,7 @@ fn main() {
     inv.insert_item(Item::new(0, "Bars", 10, Quality::Normal));
     inv.insert_item(Item::new(0, "Bits", 10, Quality::Normal));
     println!("{:#?}", inv);
-    let sorted_items = inv.sorted_inventory();
+    let sorted_items = inv.ord_by_name();
     println!("{:#?}", sorted_items);
     inv.insert_item(Item::new(0, "Plates", 10, Quality::Normal));
 }
