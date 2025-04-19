@@ -37,11 +37,7 @@ impl Slot {
 
 impl Display for Slot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{}|{}|{}]",
-            self.row, self.shelf, self.zone
-        )
+        write!(f, "[{}|{}|{}]", self.row, self.shelf, self.zone)
     } // FIXME: choose a better string representation...
 }
 
@@ -53,16 +49,23 @@ impl Debug for Slot {
 
 impl From<(usize, usize, usize)> for Slot {
     fn from(value: (usize, usize, usize)) -> Self {
-        Self { row: value.0, shelf: value.1, zone: value.2 }
+        Self {
+            row: value.0,
+            shelf: value.1,
+            zone: value.2,
+        }
     }
 }
 
 impl From<[usize; 3]> for Slot {
     fn from(value: [usize; 3]) -> Self {
-        Self { row: value[0], shelf: value[1], zone: value[2] }
+        Self {
+            row: value[0],
+            shelf: value[1],
+            zone: value[2],
+        }
     }
 }
-
 
 enum Quality {
     Fragile {
@@ -236,9 +239,23 @@ where
         // convert to Vec for O(N log(N)) sorting
         let mut items: Vec<&Item> = self.inventory.values().collect();
         items.sort_by(|a, b| a.name.cmp(&b.name));
-        items  // sort refs to avoid copying (low memory footprint)
+        items // sort refs to avoid copying (low memory footprint)
     }
 
+    fn count_id(&self, id: usize) -> usize {
+        // TODO: should also return a bool to indicate count > 0?
+        // TODO: should return an Option or Result to indicate count = 0?
+        self.inventory.values().filter(|item| item.id == id).count()
+    }
+
+    fn count_name(&self, name: &str) -> usize {
+        // TODO: should also return a bool to indicate count > 0?
+        // TODO: should return an Option or Result to indicate count = 0?
+        self.inventory
+            .values()
+            .filter(|item| item.name == name)
+            .count()
+    }
 }
 
 fn main() {
@@ -247,10 +264,14 @@ fn main() {
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
     inv.insert_item(Item::new(0, "Nuts", 10, Quality::Normal));
     inv.insert_item(Item::new(0, "Screws", 10, Quality::Normal));
-    inv.insert_item(Item::new(0, "Bars", 10, Quality::Normal));
-    inv.insert_item(Item::new(0, "Bits", 10, Quality::Normal));
+    inv.insert_item(Item::new(1, "Bars", 10, Quality::Normal));
+    inv.insert_item(Item::new(1, "Bits", 10, Quality::Normal));
     println!("{:#?}", inv);
-    let sorted_items = inv.ord_by_name();
-    println!("{:#?}", sorted_items);
-    inv.insert_item(Item::new(0, "Plates", 10, Quality::Normal));
+    let sorted_items = inv.ord_by_name(); // active immutable borrow!
+    println!("{:#?}", sorted_items); // lifetime ends here (no further uses)
+    inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal));
+    println!("{:#?}", inv.count_id(0));
+    println!("{:#?}", inv.count_id(100));
+    println!("{:#?}", inv.count_name("Bolts"));
+    println!("{:#?}", inv.count_name("Monkey"));
 }
