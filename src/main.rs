@@ -1,36 +1,47 @@
 use chrono::{DateTime, Local};
 use itertools::iproduct;
 use std::collections::HashMap;
-use std::fmt::{write, Debug, Display};
-use std::convert::{From};
+use std::convert::From;
+use std::fmt::{Debug, Display, write};
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
-type RowId = usize;
-type ShelfId = usize;
-type ZoneId = usize;
 
-
-// TODO: implement Slot::as_tuple method
-// TODO: implement trait std::convert::From<(RowId, ShelfId, ZoneId)>
 // TODO: implement safeguards to Slot::new (e.g. MAX_INVENTORY_SIZE checks)
 // TODO: implement Slot::distance method (Manhattan?)
+// FIXME: drop usize aliases and use arrays instead?
+//        (tuples -> heterogeneous data, which is not the case)
 #[derive(Hash, PartialEq, Eq)]
 struct Slot {
-    position: (RowId, ShelfId, ZoneId)
+    row: usize,
+    shelf: usize,
+    zone: usize,
 }
 
 impl Slot {
-    fn new(position: (RowId, ShelfId, ZoneId)) -> Self {
-        Self { position }
+    fn new(row: usize, shelf: usize, zone: usize) -> Self {
+        Self { row, shelf, zone }
     }
-    fn as_tuple(&self) -> (RowId, ShelfId, ZoneId) {
-        (self.position.0, self.position.1, self.position.2)
+    fn as_tuple(&self) -> (usize, usize, usize) {
+        (self.row, self.shelf, self.zone)
+    }
+
+    fn as_array(&self) -> [usize; 3] {
+        [self.row, self.shelf, self.zone]
+    }
+
+    fn distance(&self) -> usize {
+        // Manhattan distance
+        self.as_array().iter().sum()
     }
 }
 
 impl Display for Slot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}|{}|{}]", self.position.0, self.position.1, self.position.2)
+        write!(
+            f,
+            "[{}|{}|{}]",
+            self.row, self.shelf, self.zone
+        )
     } // FIXME: choose a better string representation...
 }
 
@@ -40,12 +51,17 @@ impl Debug for Slot {
     }
 }
 
-impl From<(RowId, ShelfId, ZoneId)> for Slot {
-    fn from(value: (RowId, ShelfId, ZoneId)) -> Self {
-        Self { position: value }
+impl From<(usize, usize, usize)> for Slot {
+    fn from(value: (usize, usize, usize)) -> Self {
+        Self { row: value.0, shelf: value.1, zone: value.2 }
     }
 }
 
+impl From<[usize; 3]> for Slot {
+    fn from(value: [usize; 3]) -> Self {
+        Self { row: value[0], shelf: value[1], zone: value[2] }
+    }
+}
 
 
 enum Quality {
@@ -72,7 +88,10 @@ impl Display for Quality {
 impl Debug for Quality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Quality::Fragile { expiration_date, max_dist } => write!(f, "Fragile ({}, {})", expiration_date, max_dist),
+            Quality::Fragile {
+                expiration_date,
+                max_dist,
+            } => write!(f, "Fragile ({}, {})", expiration_date, max_dist),
             Quality::OverSized { size } => write!(f, "OverSized ({})", size),
             Quality::Normal => write!(f, "Normal"),
         }
@@ -107,7 +126,11 @@ impl Item {
 impl Display for Item {
     // FIXME: add self.info (need to impl Display for ItemInfo)
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "[Item {}: {}] [Qty: {}, {}]", self.id, self.name, self.quantity, self.quality)
+        write!(
+            f,
+            "[Item {}: {}] [Qty: {}, {}]",
+            self.id, self.name, self.quantity, self.quality
+        )
     }
 }
 
@@ -117,10 +140,9 @@ impl Debug for Item {
     }
 }
 
-
 #[derive(Debug)]
 struct ItemInfo {
-    position: (usize, usize, usize),
+    position: (usize, usize, usize), // FIXME: is this necessary?
     timestamp: DateTime<Local>,
 }
 
@@ -135,11 +157,7 @@ impl ItemInfo {
 
 // TODO: should be selectable AT COMPILE TIME
 trait AllocStrategy {
-    fn alloc(
-        &self,
-        item: &Item,
-        inventory: &HashMap<Slot, Item>,
-    ) -> Option<Slot>;
+    fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot>;
 }
 
 #[derive(Debug)]
@@ -201,34 +219,38 @@ where
     }
 
     fn _insert_item(&mut self, slot: Slot, item: Item) {
-        self.inventory
-            .entry(slot)
-            .or_insert(item);
+        self.inventory.entry(slot).or_insert(item);
     }
 
     // TODO: separate Manager::get_item internal impl from public API
     fn get_item(&self, row: usize, shelf: usize, zone: usize) -> Option<&Item> {
-        self.inventory.get(&Slot::new((row, shelf, zone)))
+        self.inventory.get(&Slot::from((row, shelf, zone)))
     }
 
     // TODO: separate Manager::get_item internal impl from public API
     fn remove_item(&mut self, row: usize, shelf: usize, zone: usize) -> Option<Item> {
-        self.inventory.remove(&Slot::new((row, shelf, zone)))
+        self.inventory.remove(&Slot::from((row, shelf, zone)))
     }
+
+    fn sorted_inventory(&self) -> Vec<&Item> {
+        // convert to Vec for O(N log(N)) sorting
+        let mut items: Vec<&Item> = self.inventory.values().collect();
+        items.sort_by(|a, b| a.name.cmp(&b.name));
+        items  // sort refs to avoid copying (low memory footprint)
+    }
+
 }
 
 fn main() {
     println!("Hello, world!");
     let mut inv = Manager::new(RoundRobinAllocator {});
-    println!("{:#?}", inv);
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Nuts", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Screws", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Bars", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Bits", 10, Quality::Normal));
     println!("{:#?}", inv);
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
-    println!("{:#?}", inv);
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
-    println!("{:#?}", inv);
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
-    println!("{:#?}", inv);
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
-    println!("{:#?}", inv);
+    let sorted_items = inv.sorted_inventory();
+    println!("{:#?}", sorted_items);
+    inv.insert_item(Item::new(0, "Plates", 10, Quality::Normal));
 }
