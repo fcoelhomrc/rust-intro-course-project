@@ -1,15 +1,34 @@
 use chrono::{DateTime, Local};
 use itertools::iproduct;
 use std::collections::HashMap;
+use std::fmt::{Debug, Display};
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 type RowId = usize;
 type ShelfId = usize;
 type ZoneId = usize;
 
-#[derive(Debug)]
-struct ItemPosition {
+#[derive(Hash, PartialEq, Eq)]
+struct Slot {
     position: (RowId, ShelfId, ZoneId)
+}
+
+impl Slot {
+    fn new(position: (RowId, ShelfId, ZoneId)) -> Self {
+        Self { position }
+    }
+}
+
+impl Display for Slot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}|{}|{}]", self.position.0, self.position.1, self.position.2)
+    }
+}
+
+impl Debug for Slot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
 }
 
 
@@ -71,7 +90,7 @@ trait AllocStrategy {
     fn alloc(
         &self,
         item: &Item,
-        inventory: &HashMap<(RowId, ShelfId, ZoneId), Item>,
+        inventory: &HashMap<Slot, Item>,
     ) -> Option<(RowId, ShelfId, ZoneId)>;
 }
 
@@ -81,7 +100,7 @@ impl AllocStrategy for RoundRobinAllocator {
     fn alloc(
         &self,
         item: &Item, // TODO: handle different variants of Quality
-        inventory: &HashMap<(RowId, ShelfId, ZoneId), Item>,
+        inventory: &HashMap<Slot, Item>,
     ) -> Option<(RowId, ShelfId, ZoneId)> {
         // round-robin
         for (row, shelf, zone) in iproduct!(
@@ -89,7 +108,7 @@ impl AllocStrategy for RoundRobinAllocator {
             0..MAX_INVENTORY_SIZE,
             0..MAX_INVENTORY_SIZE
         ) {
-            if inventory.get(&(row, shelf, zone)).is_none() {
+            if inventory.get(&Slot::new((row, shelf, zone))).is_none() {
                 return Some((row, shelf, zone));
             }
         }
@@ -110,8 +129,7 @@ where
     A: AllocStrategy,
 {
     // Row -> Shelf -> Zone -> Option<Item>
-    inventory: HashMap<(RowId, ShelfId, ZoneId), Item>,
-    item_map: HashMap<usize, Vec<ItemInfo>>,
+    inventory: HashMap<Slot, Item>,
     allocator: A,
 }
 
@@ -122,7 +140,6 @@ where
     fn new(allocator: A) -> Manager<A> {
         Manager {
             inventory: HashMap::new(),
-            item_map: HashMap::new(),
             allocator,
         }
     }
@@ -136,16 +153,16 @@ where
 
     fn _insert_item(&mut self, row: usize, shelf: usize, zone: usize, item: Item) {
         self.inventory
-            .entry((row, shelf, zone))
+            .entry(Slot::new((row, shelf, zone)))
             .or_insert(item);
     }
 
     fn get_item(&self, row: usize, shelf: usize, zone: usize) -> Option<&Item> {
-        self.inventory.get(&(row, shelf, zone))
+        self.inventory.get(&Slot::new((row, shelf, zone)))
     }
 
     fn remove_item(&mut self, row: usize, shelf: usize, zone: usize) -> Option<Item> {
-        self.inventory.remove(&(row, shelf, zone))
+        self.inventory.remove(&Slot::new((row, shelf, zone)))
     }
 }
 
