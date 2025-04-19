@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 use itertools::iproduct;
 use std::collections::HashMap;
-use std::fmt::{Debug, Display};
+use std::fmt::{write, Debug, Display};
 use std::convert::{From};
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
@@ -48,7 +48,6 @@ impl From<(RowId, ShelfId, ZoneId)> for Slot {
 
 
 
-#[derive(Debug)]
 enum Quality {
     Fragile {
         expiration_date: String,
@@ -60,7 +59,26 @@ enum Quality {
     Normal,
 }
 
-#[derive(Debug)]
+impl Display for Quality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Quality::Fragile { .. } => write!(f, "Fragile"),
+            Quality::OverSized { .. } => write!(f, "OverSized"),
+            Quality::Normal => write!(f, "Normal"),
+        }
+    }
+}
+
+impl Debug for Quality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Quality::Fragile { expiration_date, max_dist } => write!(f, "Fragile ({}, {})", expiration_date, max_dist),
+            Quality::OverSized { size } => write!(f, "OverSized ({})", size),
+            Quality::Normal => write!(f, "Normal"),
+        }
+    }
+}
+
 struct Item {
     id: usize,
     name: String,
@@ -86,6 +104,20 @@ impl Item {
     }
 }
 
+impl Display for Item {
+    // FIXME: add self.info (need to impl Display for ItemInfo)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "[Item {}: {}] [Qty: {}, {}]", self.id, self.name, self.quantity, self.quality)
+    }
+}
+
+impl Debug for Item {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+
 #[derive(Debug)]
 struct ItemInfo {
     position: (usize, usize, usize),
@@ -107,7 +139,7 @@ trait AllocStrategy {
         &self,
         item: &Item,
         inventory: &HashMap<Slot, Item>,
-    ) -> Option<(RowId, ShelfId, ZoneId)>;
+    ) -> Option<Slot>;
 }
 
 #[derive(Debug)]
@@ -117,15 +149,16 @@ impl AllocStrategy for RoundRobinAllocator {
         &self,
         item: &Item, // TODO: handle different variants of Quality
         inventory: &HashMap<Slot, Item>,
-    ) -> Option<(RowId, ShelfId, ZoneId)> {
+    ) -> Option<Slot> {
         // round-robin
         for (row, shelf, zone) in iproduct!(
             0..MAX_INVENTORY_SIZE,
             0..MAX_INVENTORY_SIZE,
             0..MAX_INVENTORY_SIZE
         ) {
-            if inventory.get(&Slot::new((row, shelf, zone))).is_none() {
-                return Some((row, shelf, zone));
+            let slot = Slot::from((row, shelf, zone));
+            if inventory.get(&slot).is_none() {
+                return Some(slot);
             }
         }
         None
@@ -163,20 +196,22 @@ where
     fn insert_item(&mut self, item: Item) {
         // FIXME: should return a Result (Err = failed to allocate, no valid positions)
         let opt: Option<_> = self.allocator.alloc(&item, &self.inventory);
-        let (row, shelf, zone) = opt.unwrap();
-        self._insert_item(row, shelf, zone, item)
+        let slot = opt.unwrap();
+        self._insert_item(slot, item)
     }
 
-    fn _insert_item(&mut self, row: usize, shelf: usize, zone: usize, item: Item) {
+    fn _insert_item(&mut self, slot: Slot, item: Item) {
         self.inventory
-            .entry(Slot::new((row, shelf, zone)))
+            .entry(slot)
             .or_insert(item);
     }
 
+    // TODO: separate Manager::get_item internal impl from public API
     fn get_item(&self, row: usize, shelf: usize, zone: usize) -> Option<&Item> {
         self.inventory.get(&Slot::new((row, shelf, zone)))
     }
 
+    // TODO: separate Manager::get_item internal impl from public API
     fn remove_item(&mut self, row: usize, shelf: usize, zone: usize) -> Option<Item> {
         self.inventory.remove(&Slot::new((row, shelf, zone)))
     }
