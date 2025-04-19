@@ -2,12 +2,18 @@ use chrono::{DateTime, Local};
 use itertools::iproduct;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::convert::{From};
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 type RowId = usize;
 type ShelfId = usize;
 type ZoneId = usize;
 
+
+// TODO: implement Slot::as_tuple method
+// TODO: implement trait std::convert::From<(RowId, ShelfId, ZoneId)>
+// TODO: implement safeguards to Slot::new (e.g. MAX_INVENTORY_SIZE checks)
+// TODO: implement Slot::distance method (Manhattan?)
 #[derive(Hash, PartialEq, Eq)]
 struct Slot {
     position: (RowId, ShelfId, ZoneId)
@@ -17,12 +23,15 @@ impl Slot {
     fn new(position: (RowId, ShelfId, ZoneId)) -> Self {
         Self { position }
     }
+    fn as_tuple(&self) -> (RowId, ShelfId, ZoneId) {
+        (self.position.0, self.position.1, self.position.2)
+    }
 }
 
 impl Display for Slot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}|{}|{}]", self.position.0, self.position.1, self.position.2)
-    }
+    } // FIXME: choose a better string representation...
 }
 
 impl Debug for Slot {
@@ -30,6 +39,13 @@ impl Debug for Slot {
         Display::fmt(self, f)
     }
 }
+
+impl From<(RowId, ShelfId, ZoneId)> for Slot {
+    fn from(value: (RowId, ShelfId, ZoneId)) -> Self {
+        Self { position: value }
+    }
+}
+
 
 
 #[derive(Debug)]
