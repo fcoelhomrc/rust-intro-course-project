@@ -6,14 +6,10 @@ use std::fmt::{Debug, Display};
 use std::usize::MAX;
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
-// TODO: How should we represent Slot occupied by a Quality::OverSized Item?
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 
 // TODO: implement safeguards to Slot::new (e.g. MAX_INVENTORY_SIZE checks)
-// TODO: implement Slot::distance method (Manhattan?)
-// FIXME: drop usize aliases and use arrays instead?
-//        (tuples -> heterogeneous data, which is not the case)
 #[derive(Hash, PartialEq, Eq, Copy, Clone)]
 struct Slot {
     row: usize,
@@ -75,7 +71,7 @@ enum Quality {
     Fragile {
         expiration_date: String,
         max_dist: usize,
-    }, // TODO: what distance? euclidean? manhattan?
+    },
     OverSized {
         size: usize,
     },
@@ -206,10 +202,9 @@ struct RoundRobinAllocator {}
 impl AllocStrategy for RoundRobinAllocator {
     // FIXME: O(N³), but can be improved by starting search from the last allocated position.
     //        This optimization needs to consider that removing items frees previous positions.
-    // FIXME: Normal item needs to check if slot is occupied by a previous OverSized item
     fn alloc(
         &self,
-        item: &Item, // TODO: handle different variants of Quality
+        item: &Item,
         inventory: &HashMap<Slot, Item>,
     ) -> Option<Slot> {
         // round-robin
@@ -322,7 +317,6 @@ where
         items // sort refs to avoid copying (low memory footprint)
     }
 
-    // FIXME: counting methods will fail depending on how we implement over-sized items
     fn count_id(&self, id: usize) -> usize {
         // TODO: should also return a bool to indicate count > 0?
         // TODO: should return an Option or Result to indicate count = 0?
@@ -361,6 +355,6 @@ fn main() {
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
     println!("{:#?}", sorted_items); // lifetime ends here (no further uses)
     inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal));
-    println!("{:#?}", inv.count_id(0));
-    println!("{:#?}", inv.count_name("Bolts"));
+    println!("Count with ID=0: {:#?}", inv.count_id(0));
+    println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
 }
