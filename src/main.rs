@@ -143,6 +143,7 @@ impl Debug for Item {
     }
 }
 
+// FIXME: Refactor ItemInfo into Item
 #[derive(Debug)]
 struct ItemInfo {
     timestamp: DateTime<Local>,
@@ -224,7 +225,7 @@ impl AllocStrategy for RoundRobinAllocator {
 
 // TODO: implement GreedyAllocator (shortest distance)
 struct GreedyAllocator {}
-// impl AllocStrategy for Allocator2 {}
+// impl AllocStrategy for GreedyAllocator {}
 
 // TODO: should be selectable AT RUN TIME
 trait Filter {}
@@ -297,9 +298,21 @@ where
     }
 
     fn _update_maps_on_remove(&mut self, slot: &Slot, item: &Item) {
-        *self.map_ids.entry(item.id).or_insert(0) += 1;
-        *self.map_names.entry(item.name.clone()).or_insert(0) += 1;
-        self.map_slots.entry(item.id).or_insert(vec![]).push(*slot);
+        self.map_ids.entry(item.id).and_modify(|count| *count -= 1);
+        self.map_names
+            .entry(item.name.clone())
+            .and_modify(|count| *count -= 1);
+        self.map_slots
+            .entry(item.id)
+            .and_modify(|vec| vec.retain(|s| *s != *slot));
+
+        // clean-up empty entries
+        // FIXME: inefficient, because iterates over HashMap when at most a single entry needs to
+        //        be cleaned up. Instead, it would be better to clean-up using Entry API just after
+        //        we are done updating the HashMaps
+        self.map_ids.retain(|_, count| *count != 0);
+        self.map_names.retain(|_, count| *count != 0);
+        self.map_slots.retain(|_, vec| !vec.is_empty());
     }
 
     fn ord_by_name(&self) -> Vec<&Item> {
@@ -338,8 +351,12 @@ fn main() {
     ));
     println!("{:#?}", inv);
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
-    println!("{:#?}", sorted_items); // lifetime ends here (no further uses)
+    println!("Sorted by Name: {:#?}", sorted_items); // lifetime ends here (no further uses)
     inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal));
     println!("Count with ID=0: {:#?}", inv.count_id(0));
     println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
+    inv.remove_item(0, 0, 0);
+    println!("{:#?}", inv);
+    inv.remove_item(0, 0, 2);
+    println!("{:#?}", inv);
 }
