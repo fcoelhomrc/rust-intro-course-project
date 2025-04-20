@@ -10,7 +10,7 @@ const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 // TODO: implement Slot::distance method (Manhattan?)
 // FIXME: drop usize aliases and use arrays instead?
 //        (tuples -> heterogeneous data, which is not the case)
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Copy, Clone)]
 struct Slot {
     row: usize,
     shelf: usize,
@@ -198,9 +198,13 @@ struct Manager<A>
 where
     A: AllocStrategy,
 {
-    // Row -> Shelf -> Zone -> Option<Item>
     inventory: HashMap<Slot, Item>,
     allocator: A,
+
+    // reverse-maps
+    map_ids: HashMap<usize, usize>, // id, count
+    map_names: HashMap<String, usize>,  // name, count
+    map_slots: HashMap<usize, Vec<Slot>>  // id, list of slots
 }
 
 impl<A> Manager<A>
@@ -211,6 +215,10 @@ where
         Manager {
             inventory: HashMap::new(),
             allocator,
+
+            map_ids: HashMap::new(),
+            map_names: HashMap::new(),
+            map_slots: HashMap::new(),
         }
     }
 
@@ -218,11 +226,18 @@ where
         // FIXME: should return a Result (Err = failed to allocate, no valid positions)
         let opt: Option<_> = self.allocator.alloc(&item, &self.inventory);
         let slot = opt.unwrap();
+        self._update_maps_on_insert(&slot, &item);
         self._insert_item(slot, item)
     }
 
     fn _insert_item(&mut self, slot: Slot, item: Item) {
         self.inventory.entry(slot).or_insert(item);
+    }
+
+    fn _update_maps_on_insert(&mut self, slot: &Slot, item: &Item) {
+        *self.map_ids.entry(item.id).or_insert(0) += 1;
+        *self.map_names.entry(item.name.clone()).or_insert(0) += 1;
+        self.map_slots.entry(item.id).or_insert(vec![]).push(*slot);
     }
 
     // TODO: separate Manager::get_item internal impl from public API
@@ -242,6 +257,7 @@ where
         items // sort refs to avoid copying (low memory footprint)
     }
 
+    // FIXME: counting methods will fail depending on how we implement over-sized items
     fn count_id(&self, id: usize) -> usize {
         // TODO: should also return a bool to indicate count > 0?
         // TODO: should return an Option or Result to indicate count = 0?
