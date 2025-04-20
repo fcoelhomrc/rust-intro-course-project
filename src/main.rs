@@ -2,7 +2,12 @@ use chrono::{DateTime, Local};
 use itertools::iproduct;
 use std::collections::HashMap;
 use std::convert::From;
-use std::fmt::{Debug, Display, write};
+use std::fmt::{Debug, Display};
+
+// NOTE: Quality::Fragile is handled as follows:
+//       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
+// TODO: How should we represent Slot occupied by a Quality::OverSized Item?
+
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 
@@ -188,7 +193,10 @@ impl AllocStrategy for RoundRobinAllocator {
                 Quality::Fragile { max_dist, .. } if slot.distance() <= *max_dist => {
                     return Some(slot);
                 }
-                Quality::OverSized { .. } => todo!(),
+                Quality::OverSized { size } => {
+
+                    todo!()
+                }
                 _ => continue,
             }
         }
@@ -300,11 +308,11 @@ where
 fn main() {
     println!("Hello, world!");
     let mut inv = Manager::new(RoundRobinAllocator {});
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Fragile { expiration_date: "10".to_string(), max_dist: 1  } ));
     inv.insert_item(Item::new(0, "Nuts", 10, Quality::Normal));
     inv.insert_item(Item::new(0, "Screws", 10, Quality::Normal));
     inv.insert_item(Item::new(1, "Bars", 10, Quality::Normal));
-    inv.insert_item(Item::new(1, "Bits", 10, Quality::Normal));
+    inv.insert_item(Item::new(1, "Bits", 10, Quality::Fragile { expiration_date: "20".to_string(), max_dist: 1  } ));
     println!("{:#?}", inv);
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
     println!("{:#?}", sorted_items); // lifetime ends here (no further uses)
