@@ -242,17 +242,23 @@ where
         self.map_slots.entry(item.id).or_insert(vec![]).push(*slot);
     }
 
-    // TODO: separate Manager::get_item internal impl from public API
     fn get_item(&self, row: usize, shelf: usize, zone: usize) -> Option<&Item> {
-        self.inventory.get(&Slot::from((row, shelf, zone)))
+        let slot = Slot::from((row, shelf, zone));
+        self._get_item(&slot)
     }
 
-    // TODO: separate Manager::get_item internal impl from public API
-    fn remove_item(&mut self, row: usize, shelf: usize, zone: usize) -> Option<Item> {
-        self.inventory.remove(&Slot::from((row, shelf, zone)))
+    fn _get_item(&self, slot: &Slot) -> Option<&Item> {
+        self.inventory.get(slot)
     }
 
-    fn _remove_item(&mut self, slot: Slot, item: Item) -> Option<Item> {
+    fn remove_item(&mut self, row: usize, shelf: usize, zone: usize) {
+        let slot = Slot::from((row, shelf, zone));
+        if let Some(item) = self._remove_item(&slot) {
+            self._update_maps_on_remove(&slot, &item)
+        }
+    }
+
+    fn _remove_item(&mut self, slot: &Slot) -> Option<Item> {
         self.inventory.remove(slot)
     }
 
@@ -296,7 +302,5 @@ fn main() {
     println!("{:#?}", sorted_items); // lifetime ends here (no further uses)
     inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal));
     println!("{:#?}", inv.count_id(0));
-    println!("{:#?}", inv.count_id(100));
     println!("{:#?}", inv.count_name("Bolts"));
-    println!("{:#?}", inv.count_name("Monkey"));
 }
