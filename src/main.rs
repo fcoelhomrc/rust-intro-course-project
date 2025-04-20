@@ -3,11 +3,10 @@ use itertools::iproduct;
 use std::collections::HashMap;
 use std::convert::From;
 use std::fmt::{Debug, Display};
-
+use std::usize::MAX;
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
 // TODO: How should we represent Slot occupied by a Quality::OverSized Item?
-
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 
@@ -166,13 +165,48 @@ impl ItemInfo {
 // TODO: should be selectable AT COMPILE TIME
 trait AllocStrategy {
     fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot>;
+
+    fn is_slot_available(
+        &self, slot: &Slot, item: &Item, inventory: &HashMap<Slot, Item>) -> bool
+    {
+        let size = self.get_item_size(item);
+        let end = std::cmp::min(slot.zone + size, MAX_INVENTORY_SIZE);
+        // check if there are enough free zones from current position onwards
+        let is_blocked_forward = (slot.zone..end)
+            .any(|z| inventory.contains_key(&Slot::from((slot.row, slot.shelf, z))));
+        if is_blocked_forward { return false; }
+        // check if there are previous items blocking current position
+        let is_blocked_backward = (0..slot.zone)
+            // skip empty positions and return refs to items of occupied positions
+            .filter_map(|zone| {
+                inventory.get(&Slot::from((slot.row, slot.shelf, zone))).map(|item| (item, zone))
+            })
+            // extract Item size of occupied positions
+            .map(|(item, zone)| {
+                (self.get_item_size(item), zone)
+            })
+            // check if it blocks current position
+            .any(|(size, zone)| {
+                size + zone > slot.zone
+            });
+        !is_blocked_backward  // -> is_available
+    }
+
+    fn get_item_size(&self, item: &Item) -> usize {
+        match item.quality {
+            Quality::Normal | Quality::Fragile { .. } => 1,
+            Quality::OverSized { size } => size,
+        }
+    }
 }
 
 #[derive(Debug)]
 struct RoundRobinAllocator {}
+
 impl AllocStrategy for RoundRobinAllocator {
     // FIXME: O(N³), but can be improved by starting search from the last allocated position.
     //        This optimization needs to consider that removing items frees previous positions.
+    // FIXME: Normal item needs to check if slot is occupied by a previous OverSized item
     fn alloc(
         &self,
         item: &Item, // TODO: handle different variants of Quality
@@ -185,17 +219,14 @@ impl AllocStrategy for RoundRobinAllocator {
             0..MAX_INVENTORY_SIZE
         ) {
             let slot = Slot::from((row, shelf, zone));
-            if inventory.get(&slot).is_some() {
+            // handles interactions with Quality::OverSized
+            if !self.is_slot_available(&slot, item, inventory) {
                 continue;
-            };
+            }
             match &item.quality {
-                Quality::Normal => return Some(slot),
+                Quality::Normal | Quality::OverSized { .. } => return Some(slot),
                 Quality::Fragile { max_dist, .. } if slot.distance() <= *max_dist => {
                     return Some(slot);
-                }
-                Quality::OverSized { size } => {
-
-                    todo!()
                 }
                 _ => continue,
             }
@@ -306,13 +337,26 @@ where
 }
 
 fn main() {
-    println!("Hello, world!");
     let mut inv = Manager::new(RoundRobinAllocator {});
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Fragile { expiration_date: "10".to_string(), max_dist: 1  } ));
-    inv.insert_item(Item::new(0, "Nuts", 10, Quality::Normal));
-    inv.insert_item(Item::new(0, "Screws", 10, Quality::Normal));
-    inv.insert_item(Item::new(1, "Bars", 10, Quality::Normal));
-    inv.insert_item(Item::new(1, "Bits", 10, Quality::Fragile { expiration_date: "20".to_string(), max_dist: 1  } ));
+    inv.insert_item(Item::new(
+        0,
+        "Bolts",
+        10,
+        Quality::OverSized {
+            size: 2,
+        },
+    ));
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
+    inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal));
+    inv.insert_item(Item::new(
+        3,
+        "Bits",
+        10,
+        Quality::Fragile {
+            expiration_date: "20".to_string(),
+            max_dist: 1,
+        },
+    ));
     println!("{:#?}", inv);
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
     println!("{:#?}", sorted_items); // lifetime ends here (no further uses)
