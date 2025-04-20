@@ -261,16 +261,13 @@ where
     fn count_id(&self, id: usize) -> usize {
         // TODO: should also return a bool to indicate count > 0?
         // TODO: should return an Option or Result to indicate count = 0?
-        self.inventory.values().filter(|item| item.id == id).count()
+        self.map_ids.get(&id).map_or(0, |v| *v)
     }
 
     fn count_name(&self, name: &str) -> usize {
         // TODO: should also return a bool to indicate count > 0?
         // TODO: should return an Option or Result to indicate count = 0?
-        self.inventory
-            .values()
-            .filter(|item| item.name == name)
-            .count()
+        self.map_names.get(name).map_or(0, |v| *v)
     }
 }
 
