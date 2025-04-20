@@ -145,14 +145,12 @@ impl Debug for Item {
 
 #[derive(Debug)]
 struct ItemInfo {
-    position: (usize, usize, usize), // FIXME: is this necessary?
     timestamp: DateTime<Local>,
 }
 
 impl ItemInfo {
-    fn new(position: (usize, usize, usize)) -> Self {
+    fn new() -> Self {
         Self {
-            position,
             timestamp: Local::now(),
         }
     }
@@ -162,30 +160,28 @@ impl ItemInfo {
 trait AllocStrategy {
     fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot>;
 
-    fn is_slot_available(
-        &self, slot: &Slot, item: &Item, inventory: &HashMap<Slot, Item>) -> bool
-    {
+    fn is_slot_available(&self, slot: &Slot, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
         let size = self.get_item_size(item);
         let end = std::cmp::min(slot.zone + size, MAX_INVENTORY_SIZE);
         // check if there are enough free zones from current position onwards
         let is_blocked_forward = (slot.zone..end)
             .any(|z| inventory.contains_key(&Slot::from((slot.row, slot.shelf, z))));
-        if is_blocked_forward { return false; }
+        if is_blocked_forward {
+            return false;
+        }
         // check if there are previous items blocking current position
         let is_blocked_backward = (0..slot.zone)
             // skip empty positions and return refs to items of occupied positions
             .filter_map(|zone| {
-                inventory.get(&Slot::from((slot.row, slot.shelf, zone))).map(|item| (item, zone))
+                inventory
+                    .get(&Slot::from((slot.row, slot.shelf, zone)))
+                    .map(|item| (item, zone))
             })
             // extract Item size of occupied positions
-            .map(|(item, zone)| {
-                (self.get_item_size(item), zone)
-            })
+            .map(|(item, zone)| (self.get_item_size(item), zone))
             // check if it blocks current position
-            .any(|(size, zone)| {
-                size + zone > slot.zone
-            });
-        !is_blocked_backward  // -> is_available
+            .any(|(size, zone)| size + zone > slot.zone);
+        !is_blocked_backward // -> is_available
     }
 
     fn get_item_size(&self, item: &Item) -> usize {
@@ -202,11 +198,7 @@ struct RoundRobinAllocator {}
 impl AllocStrategy for RoundRobinAllocator {
     // FIXME: O(N³), but can be improved by starting search from the last allocated position.
     //        This optimization needs to consider that removing items frees previous positions.
-    fn alloc(
-        &self,
-        item: &Item,
-        inventory: &HashMap<Slot, Item>,
-    ) -> Option<Slot> {
+    fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
         // round-robin
         for (row, shelf, zone) in iproduct!(
             0..MAX_INVENTORY_SIZE,
@@ -332,14 +324,7 @@ where
 
 fn main() {
     let mut inv = Manager::new(RoundRobinAllocator {});
-    inv.insert_item(Item::new(
-        0,
-        "Bolts",
-        10,
-        Quality::OverSized {
-            size: 2,
-        },
-    ));
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }));
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
     inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal));
     inv.insert_item(Item::new(
