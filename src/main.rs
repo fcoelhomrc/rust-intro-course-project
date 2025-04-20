@@ -1,9 +1,9 @@
 use chrono::{DateTime, Local};
-use itertools::iproduct;
+use itertools::{Itertools, iproduct};
 use std::collections::HashMap;
 use std::convert::From;
 use std::fmt::{Debug, Display};
-use std::usize::MAX;
+
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
 
@@ -107,7 +107,7 @@ struct Item {
     quantity: usize,
     quality: Quality,
     // additional fields
-    info: Option<ItemInfo>,
+    timestamp: Option<DateTime<Local>>,
 }
 
 impl Item {
@@ -117,12 +117,12 @@ impl Item {
             name: name.to_string(),
             quantity,
             quality,
-            info: None,
+            timestamp: None,
         }
     }
 
-    fn set_info(&mut self, info: ItemInfo) {
-        self.info = Some(info);
+    fn update_timestamp(&mut self) {
+        self.timestamp = Some(Local::now());
     }
 }
 
@@ -140,20 +140,6 @@ impl Display for Item {
 impl Debug for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
-    }
-}
-
-// FIXME: Refactor ItemInfo into Item
-#[derive(Debug)]
-struct ItemInfo {
-    timestamp: DateTime<Local>,
-}
-
-impl ItemInfo {
-    fn new() -> Self {
-        Self {
-            timestamp: Local::now(),
-        }
     }
 }
 
@@ -224,8 +210,51 @@ impl AllocStrategy for RoundRobinAllocator {
 }
 
 // TODO: implement GreedyAllocator (shortest distance)
+#[derive(Debug)]
 struct GreedyAllocator {}
-// impl AllocStrategy for GreedyAllocator {}
+
+impl GreedyAllocator {
+    fn slots_by_distance(dist: usize) -> impl Iterator<Item = Slot> {
+        (0..=dist)
+            .flat_map(move |i| {
+                (0..=dist - i).flat_map(move |j| {
+                    let k = dist - i - j;
+                    [i, j, k]
+                        .iter()
+                        .copied()
+                        .permutations(3)
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unique()
+            .filter(|perm| {
+                perm[0] < MAX_INVENTORY_SIZE
+                    && perm[1] < MAX_INVENTORY_SIZE
+                    && perm[2] < MAX_INVENTORY_SIZE
+            })
+            .map(|perm| Slot::from((perm[0], perm[1], perm[2])))
+    }
+}
+
+impl AllocStrategy for GreedyAllocator {
+    fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
+        for dist in 0..3 * MAX_INVENTORY_SIZE {
+            for slot in GreedyAllocator::slots_by_distance(dist) {
+                if !self.is_slot_available(&slot, item, inventory) {
+                    continue;
+                }
+                match &item.quality {
+                    Quality::Normal | Quality::OverSized { .. } => return Some(slot),
+                    Quality::Fragile { max_dist, .. } if slot.distance() <= *max_dist => {
+                        return Some(slot);
+                    }
+                    _ => continue,
+                }
+            }
+        }
+        None
+    }
+}
 
 // TODO: should be selectable AT RUN TIME
 trait Filter {}
@@ -336,17 +365,19 @@ where
 }
 
 fn main() {
-    let mut inv = Manager::new(RoundRobinAllocator {});
+    // let mut inv = Manager::new(RoundRobinAllocator {});
+    let mut inv = Manager::new(GreedyAllocator {});
+
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }));
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
     inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal));
     inv.insert_item(Item::new(
-        3,
+        2,
         "Bits",
         10,
         Quality::Fragile {
             expiration_date: "20".to_string(),
-            max_dist: 1,
+            max_dist: 2,
         },
     ));
     println!("{:#?}", inv);
@@ -359,4 +390,13 @@ fn main() {
     println!("{:#?}", inv);
     inv.remove_item(0, 0, 2);
     println!("{:#?}", inv);
+
+
+    println!("TEST ITERATION");
+    let mut ctn = 0;
+    for slot in GreedyAllocator::slots_by_distance(2) {
+        println!("SLOT: {}", slot);
+        ctn += 1;
+    }
+    println!("CTN: {}", ctn);
 }
