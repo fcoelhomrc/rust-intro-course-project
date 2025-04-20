@@ -166,6 +166,8 @@ trait AllocStrategy {
 #[derive(Debug)]
 struct RoundRobinAllocator {}
 impl AllocStrategy for RoundRobinAllocator {
+    // FIXME: O(N³), but can be improved by starting search from the last allocated position.
+    //        This optimization needs to consider that removing items frees previous positions.
     fn alloc(
         &self,
         item: &Item, // TODO: handle different variants of Quality
@@ -248,6 +250,16 @@ where
     // TODO: separate Manager::get_item internal impl from public API
     fn remove_item(&mut self, row: usize, shelf: usize, zone: usize) -> Option<Item> {
         self.inventory.remove(&Slot::from((row, shelf, zone)))
+    }
+
+    fn _remove_item(&mut self, slot: Slot, item: Item) -> Option<Item> {
+        self.inventory.remove(slot)
+    }
+
+    fn _update_maps_on_remove(&mut self, slot: &Slot, item: &Item) {
+        *self.map_ids.entry(item.id).or_insert(0) += 1;
+        *self.map_names.entry(item.name.clone()).or_insert(0) += 1;
+        self.map_slots.entry(item.id).or_insert(vec![]).push(*slot);
     }
 
     fn ord_by_name(&self) -> Vec<&Item> {
