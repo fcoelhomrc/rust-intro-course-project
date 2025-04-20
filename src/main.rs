@@ -180,8 +180,16 @@ impl AllocStrategy for RoundRobinAllocator {
             0..MAX_INVENTORY_SIZE
         ) {
             let slot = Slot::from((row, shelf, zone));
-            if inventory.get(&slot).is_none() {
-                return Some(slot);
+            if inventory.get(&slot).is_some() {
+                continue;
+            };
+            match &item.quality {
+                Quality::Normal => return Some(slot),
+                Quality::Fragile { max_dist, .. } if slot.distance() <= *max_dist => {
+                    return Some(slot);
+                }
+                Quality::OverSized { .. } => todo!(),
+                _ => continue,
             }
         }
         None
@@ -204,9 +212,9 @@ where
     allocator: A,
 
     // reverse-maps
-    map_ids: HashMap<usize, usize>, // id, count
-    map_names: HashMap<String, usize>,  // name, count
-    map_slots: HashMap<usize, Vec<Slot>>  // id, list of slots
+    map_ids: HashMap<usize, usize>,       // id, count
+    map_names: HashMap<String, usize>,    // name, count
+    map_slots: HashMap<usize, Vec<Slot>>, // id, list of slots
 }
 
 impl<A> Manager<A>
