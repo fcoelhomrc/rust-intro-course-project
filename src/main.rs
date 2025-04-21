@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use itertools::{Itertools, iproduct};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::From;
@@ -69,7 +69,7 @@ impl From<[usize; 3]> for Slot {
 
 enum Quality {
     Fragile {
-        expiration_date: String,
+        expiration_date: DateTime<Local>,
         max_row: usize,
     },
     OverSized {
@@ -301,10 +301,10 @@ where
     allocator: A,
 
     // reverse-maps
-    map_ids: HashMap<usize, usize>,       // id, count
-    map_names: HashMap<String, usize>,    // name, count
-    map_slots: HashMap<usize, Vec<Slot>>, // id, list of slots
-    map_dates: BTreeMap<DateTime<Local>, usize>,  // date, id
+    map_ids: HashMap<usize, usize>,                   // id, count
+    map_names: HashMap<String, usize>,                // name, count
+    map_slots: HashMap<usize, Vec<Slot>>,             // id, list of slots
+    map_dates: BTreeMap<DateTime<Local>, Vec<usize>>, // date, list of ids
 }
 
 impl<A> Manager<A>
@@ -323,16 +323,16 @@ where
         }
     }
 
-    fn insert_item(&mut self, mut item: Item) {
+    fn insert_item(&mut self, item: Item) {
         // FIXME: should return a Result (Err = failed to allocate, no valid positions)
         let opt: Option<_> = self.allocator.alloc(&item, &self.inventory);
         let slot = opt.unwrap();
-        item.update_timestamp();
         self._update_maps_on_insert(&slot, &item);
         self._insert_item(slot, item)
     }
 
-    fn _insert_item(&mut self, slot: Slot, item: Item) {
+    fn _insert_item(&mut self, slot: Slot, mut item: Item) {
+        item.update_timestamp();
         self.inventory.entry(slot).or_insert(item);
     }
 
@@ -340,10 +340,12 @@ where
         *self.map_ids.entry(item.id).or_insert(0) += 1;
         *self.map_names.entry(item.name.clone()).or_insert(0) += 1;
         self.map_slots.entry(item.id).or_insert(vec![]).push(*slot);
-        // FIXME: assuming DateTime<Local> are unique
-        //        (no clashes between Items added at the 'same time')
-        if let Some(time) = item.timestamp {
-            self.map_dates.entry(time).and_modify(|v| *v = item.id);
+
+        match item.quality {
+            Quality::Fragile { expiration_date, .. } => {
+                    self.map_dates.entry(expiration_date.clone()).or_insert(vec![]).push(item.id);
+                }
+            _ => {}
         }
     }
 
@@ -375,9 +377,15 @@ where
         self.map_slots
             .entry(item.id)
             .and_modify(|vec| vec.retain(|s| *s != *slot));
-        if let Some(time) = item.timestamp {
-            // FIXME: if this returns None, something went wrong and needs to be handled
-            let kv = self.map_dates.remove_entry(&time);
+
+        match item.quality {
+            Quality::Fragile { expiration_date, .. } => {
+                    self.map_dates
+                        .entry(expiration_date)
+                        .and_modify(|vec| vec.retain(|id| *id != item.id));
+
+            }
+            _ => {}
         }
 
         // clean-up empty entries
@@ -387,7 +395,7 @@ where
         self.map_ids.retain(|_, count| *count != 0);
         self.map_names.retain(|_, count| *count != 0);
         self.map_slots.retain(|_, vec| !vec.is_empty());
-        // no need to clean-up self.map_dates
+        self.map_dates.retain(|_, vec| !vec.is_empty());
     }
 
     fn ord_by_name(&self) -> Vec<&Item> {
@@ -415,15 +423,21 @@ where
         self.map_slots.get(&id)
     }
 
-    fn find_expired(&self, date: DateTime<Local>) -> Vec<&Item> {
-        todo!()
+    fn find_expired(&self, date: DateTime<Local>) -> Vec<usize> {
+        self.map_dates
+            .range(..=date)
+            .flat_map(|(_, ids)| ids)
+            .copied()
+            .collect::<Vec<_>>()
     }
-
 }
 
 fn main() {
     let mut inv = Manager::new(RoundRobinAllocator::default());
     // let mut inv = Manager::new(GreedyAllocator {});
+
+    let exp_date = NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
+    let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
 
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }));
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
@@ -433,7 +447,7 @@ fn main() {
         "Bits",
         10,
         Quality::Fragile {
-            expiration_date: "20".to_string(),
+            expiration_date: exp_date,
             max_row: 0,
         },
     ));
@@ -447,4 +461,6 @@ fn main() {
     println!("Count with ID=0: {:#?}", inv.count_id(0));
     println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
     println!("Slots with ID=0: {:#?}", inv.find_id(0).unwrap());
+
+    println!("Expired items: {:#?}", inv.find_expired(Local::now()));
 }
