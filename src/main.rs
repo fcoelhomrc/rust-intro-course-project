@@ -128,13 +128,24 @@ impl Item {
 }
 
 impl Display for Item {
-    // FIXME: add self.info (need to impl Display for ItemInfo)
+
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[Item {}: {}] [Qty: {}, {}]",
-            self.id, self.name, self.quantity, self.quality
-        )
+        match &self.timestamp {
+            Some(time) => {
+                write!(
+                    f,
+                    "[Item {}: {}] [Qty: {}, {}] [Created at: {}]",
+                    self.id, self.name, self.quantity, self.quality, time,
+                )
+            }
+            None => {
+                write!(
+                    f,
+                    "[Item {}: {}] [Qty: {}, {}] [Created at: ???]",
+                    self.id, self.name, self.quantity, self.quality,
+                )
+            }
+        }
     }
 }
 
