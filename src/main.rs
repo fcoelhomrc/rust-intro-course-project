@@ -214,8 +214,6 @@ impl Default for RoundRobinAllocator {
 }
 
 impl AllocStrategy for RoundRobinAllocator {
-    // FIXME: O(N³), but can be improved by starting search from the last allocated position.
-    //        This optimization needs to consider that removing items frees previous positions.
     fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
         // round-robin
         let (row_start, shelf_start, zone_start) = self.get_start_pos();
