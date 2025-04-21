@@ -6,7 +6,6 @@ use std::fmt::{Debug, Display};
 
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
-// FIXME: Quality::Fragile is not impl as specified (max row, not max dist!)
 
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
@@ -182,7 +181,26 @@ trait AllocStrategy {
 }
 
 #[derive(Debug)]
-struct RoundRobinAllocator {}
+struct RoundRobinAllocator {
+    prev_alloc: Option<Slot>,
+}
+
+impl RoundRobinAllocator {
+    fn get_prev_alloc(&self) -> &Option<Slot> {
+        &self.prev_alloc
+    }
+
+    fn set_prev_alloc(&mut self, new_alloc: Option<Slot>) {
+        self.prev_alloc = new_alloc;
+    }
+
+}
+
+impl Default for RoundRobinAllocator {
+    fn default() -> Self {
+        Self { prev_alloc: None }
+    }
+}
 
 impl AllocStrategy for RoundRobinAllocator {
     // FIXME: O(N³), but can be improved by starting search from the last allocated position.
