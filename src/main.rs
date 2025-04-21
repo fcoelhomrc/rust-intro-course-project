@@ -7,7 +7,6 @@ use std::fmt::{Debug, Display};
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
 
-
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 
 // TODO: implement safeguards to Slot::new (e.g. MAX_INVENTORY_SIZE checks)
@@ -128,10 +127,9 @@ impl Item {
 }
 
 impl Display for Item {
-
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
-        let timestamp = self.timestamp
+        let timestamp = self
+            .timestamp
             .map(|t| t.to_string())
             .unwrap_or_else(|| "???".to_string());
 
@@ -209,7 +207,6 @@ impl RoundRobinAllocator {
             None => (0, 0, 0),
         }
     }
-
 }
 
 impl Default for RoundRobinAllocator {
@@ -235,7 +232,7 @@ impl AllocStrategy for RoundRobinAllocator {
             match &item.quality {
                 Quality::Normal | Quality::OverSized { .. } => return Some(slot),
                 Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
-                    self.set_prev_alloc(Some(slot));  // Slot is Copy
+                    self.set_prev_alloc(Some(slot)); // Slot is Copy
                     return Some(slot);
                 }
                 _ => continue,
@@ -274,7 +271,7 @@ impl GreedyAllocator {
 
 impl AllocStrategy for GreedyAllocator {
     fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
-        for dist in 0..= 3 * (MAX_INVENTORY_SIZE - 1) {
+        for dist in 0..=3 * (MAX_INVENTORY_SIZE - 1) {
             for slot in GreedyAllocator::slots_by_distance(dist) {
                 if !self.is_slot_available(&slot, item, inventory) {
                     continue;
@@ -399,6 +396,12 @@ where
         // TODO: should return an Option or Result to indicate count = 0?
         self.map_names.get(name).map_or(0, |v| *v)
     }
+
+    fn find_id(&self, id: usize) -> Option<&Vec<Slot>> {
+        // TODO: should also return a bool to indicate count > 0?
+        // TODO: should return an Option or Result to indicate count = 0?
+        self.map_slots.get(&id)
+    }
 }
 
 fn main() {
@@ -426,4 +429,5 @@ fn main() {
     inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal));
     println!("Count with ID=0: {:#?}", inv.count_id(0));
     println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
+    println!("Slots with ID=0: {:#?}", inv.find_id(0).unwrap());
 }
