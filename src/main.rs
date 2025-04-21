@@ -241,11 +241,6 @@ impl AllocStrategy for RoundRobinAllocator {
     }
 }
 
-// TODO: implement GreedyAllocator (shortest distance)
-//       Is the allocator impl correct?
-//       "Zone closest before going further"
-//       (0,0,0) -> (0,0,1) -> (0,1,0) -> (1,0,0) -> (0,0,2) -> ...
-//       (0,0,0) -> (0,1,0) -> ... -> (1,0,0) -> ... -> (0,0,1) -> ...
 #[derive(Debug)]
 struct GreedyAllocator {}
 
@@ -274,7 +269,7 @@ impl GreedyAllocator {
 
 impl AllocStrategy for GreedyAllocator {
     fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
-        for dist in 0..3 * MAX_INVENTORY_SIZE {
+        for dist in 0..= 3 * (MAX_INVENTORY_SIZE - 1) {
             for slot in GreedyAllocator::slots_by_distance(dist) {
                 if !self.is_slot_available(&slot, item, inventory) {
                     continue;
@@ -401,8 +396,8 @@ where
 }
 
 fn main() {
-    // let mut inv = Manager::new(RoundRobinAllocator {});
-    let mut inv = Manager::new(GreedyAllocator {});
+    let mut inv = Manager::new(RoundRobinAllocator::default());
+    // let mut inv = Manager::new(GreedyAllocator {});
 
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }));
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
@@ -413,26 +408,16 @@ fn main() {
         10,
         Quality::Fragile {
             expiration_date: "20".to_string(),
-            max_row: 2,
+            max_row: 0,
         },
     ));
+    inv.remove_item(0, 0, 0);
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
+
     println!("{:#?}", inv);
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
     println!("Sorted by Name: {:#?}", sorted_items); // lifetime ends here (no further uses)
     inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal));
     println!("Count with ID=0: {:#?}", inv.count_id(0));
     println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
-    inv.remove_item(0, 0, 0);
-    println!("{:#?}", inv);
-    inv.remove_item(0, 0, 2);
-    println!("{:#?}", inv);
-
-
-    println!("TEST ITERATION");
-    let mut ctn = 0;
-    for slot in GreedyAllocator::slots_by_distance(2) {
-        println!("SLOT: {}", slot);
-        ctn += 1;
-    }
-    println!("CTN: {}", ctn);
 }
