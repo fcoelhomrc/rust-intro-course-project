@@ -6,6 +6,8 @@ use std::fmt::{Debug, Display};
 
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
+// FIXME: Quality::Fragile is not impl as specified (max row, not max dist!)
+
 
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 
@@ -70,7 +72,7 @@ impl From<[usize; 3]> for Slot {
 enum Quality {
     Fragile {
         expiration_date: String,
-        max_dist: usize,
+        max_row: usize,
     },
     OverSized {
         size: usize,
@@ -93,7 +95,7 @@ impl Debug for Quality {
         match self {
             Quality::Fragile {
                 expiration_date,
-                max_dist,
+                max_row: max_dist,
             } => write!(f, "Fragile ({}, {})", expiration_date, max_dist),
             Quality::OverSized { size } => write!(f, "OverSized ({})", size),
             Quality::Normal => write!(f, "Normal"),
@@ -199,7 +201,7 @@ impl AllocStrategy for RoundRobinAllocator {
             }
             match &item.quality {
                 Quality::Normal | Quality::OverSized { .. } => return Some(slot),
-                Quality::Fragile { max_dist, .. } if slot.distance() <= *max_dist => {
+                Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
                     return Some(slot);
                 }
                 _ => continue,
@@ -210,6 +212,10 @@ impl AllocStrategy for RoundRobinAllocator {
 }
 
 // TODO: implement GreedyAllocator (shortest distance)
+//       Is the allocator impl correct?
+//       "Zone closest before going further"
+//       (0,0,0) -> (0,0,1) -> (0,1,0) -> (1,0,0) -> (0,0,2) -> ...
+//       (0,0,0) -> (0,1,0) -> ... -> (1,0,0) -> ... -> (0,0,1) -> ...
 #[derive(Debug)]
 struct GreedyAllocator {}
 
@@ -245,7 +251,7 @@ impl AllocStrategy for GreedyAllocator {
                 }
                 match &item.quality {
                     Quality::Normal | Quality::OverSized { .. } => return Some(slot),
-                    Quality::Fragile { max_dist, .. } if slot.distance() <= *max_dist => {
+                    Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
                         return Some(slot);
                     }
                     _ => continue,
@@ -377,7 +383,7 @@ fn main() {
         10,
         Quality::Fragile {
             expiration_date: "20".to_string(),
-            max_dist: 2,
+            max_row: 2,
         },
     ));
     println!("{:#?}", inv);
