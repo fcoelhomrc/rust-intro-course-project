@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 use itertools::{Itertools, iproduct};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::From;
 use std::fmt::{Debug, Display};
 
@@ -304,6 +304,7 @@ where
     map_ids: HashMap<usize, usize>,       // id, count
     map_names: HashMap<String, usize>,    // name, count
     map_slots: HashMap<usize, Vec<Slot>>, // id, list of slots
+    map_dates: BTreeMap<DateTime<Local>, usize>,  // date, id
 }
 
 impl<A> Manager<A>
@@ -318,19 +319,20 @@ where
             map_ids: HashMap::new(),
             map_names: HashMap::new(),
             map_slots: HashMap::new(),
+            map_dates: BTreeMap::new(),
         }
     }
 
-    fn insert_item(&mut self, item: Item) {
+    fn insert_item(&mut self, mut item: Item) {
         // FIXME: should return a Result (Err = failed to allocate, no valid positions)
         let opt: Option<_> = self.allocator.alloc(&item, &self.inventory);
         let slot = opt.unwrap();
+        item.update_timestamp();
         self._update_maps_on_insert(&slot, &item);
         self._insert_item(slot, item)
     }
 
-    fn _insert_item(&mut self, slot: Slot, mut item: Item) {
-        item.update_timestamp();
+    fn _insert_item(&mut self, slot: Slot, item: Item) {
         self.inventory.entry(slot).or_insert(item);
     }
 
@@ -402,6 +404,11 @@ where
         // TODO: should return an Option or Result to indicate count = 0?
         self.map_slots.get(&id)
     }
+
+    fn find_expired(&self, date: DateTime<Local>) -> Vec<&Item> {
+        todo!()
+    }
+
 }
 
 fn main() {
