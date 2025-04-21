@@ -46,6 +46,6 @@ O nosso programa deve também ser capaz de, eficientemente, fazer:
 - ✅ Colocação de um item no seu local atribuído.
 - ✅ Remoção de um item da sua zona.
 - ✅ Uma busca para ver todos os itens que temos armazenados naquele momento, ordenados por nome ascendente.
-- ❌ Dado um dia, verificar quantos itens estariam a 0 ou menos dias de atingirem o prazo de validade (ou se já o passaram).
+- ✅ Dado um dia, verificar quantos itens estariam a 0 ou menos dias de atingirem o prazo de validade (ou se já o passaram).
 
 Nota: Devem utilizar estruturas de dados para atingir a eficiência pretendida. Buscas com complexidade lineares não irão ser consideradas como 100% certas pois a sua eficiência não é escalável. Se tiverem dúvidas sobre a complexidade de alguma implementação por favor contactem.
