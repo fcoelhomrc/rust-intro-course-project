@@ -332,7 +332,8 @@ where
         self._insert_item(slot, item)
     }
 
-    fn _insert_item(&mut self, slot: Slot, item: Item) {
+    fn _insert_item(&mut self, slot: Slot, mut item: Item) {
+        item.update_timestamp();
         self.inventory.entry(slot).or_insert(item);
     }
 
