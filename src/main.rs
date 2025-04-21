@@ -146,7 +146,11 @@ impl Debug for Item {
 
 // TODO: should be selectable AT COMPILE TIME
 trait AllocStrategy {
-    fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot>;
+    // FIXME: I don't like to require alloc to be &mut self,
+    //        but using an internal state in RoundRobin requires it
+    //        (otherwise we'd need to update internal state in a separate call,
+    //        which might break the abstraction as GreedyAllocator doesn't need internal state)
+    fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot>;
 
     fn is_slot_available(&self, slot: &Slot, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
         let size = self.get_item_size(item);
@@ -194,6 +198,13 @@ impl RoundRobinAllocator {
         self.prev_alloc = new_alloc;
     }
 
+    fn get_start_pos(&self) -> (usize, usize, usize) {
+        match &self.prev_alloc {
+            Some(slot) => slot.as_tuple(),
+            None => (0, 0, 0),
+        }
+    }
+
 }
 
 impl Default for RoundRobinAllocator {
@@ -205,12 +216,13 @@ impl Default for RoundRobinAllocator {
 impl AllocStrategy for RoundRobinAllocator {
     // FIXME: O(N³), but can be improved by starting search from the last allocated position.
     //        This optimization needs to consider that removing items frees previous positions.
-    fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
+    fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
         // round-robin
+        let (row_start, shelf_start, zone_start) = self.get_start_pos();
         for (row, shelf, zone) in iproduct!(
-            0..MAX_INVENTORY_SIZE,
-            0..MAX_INVENTORY_SIZE,
-            0..MAX_INVENTORY_SIZE
+            row_start..MAX_INVENTORY_SIZE,
+            shelf_start..MAX_INVENTORY_SIZE,
+            zone_start..MAX_INVENTORY_SIZE
         ) {
             let slot = Slot::from((row, shelf, zone));
             // handles interactions with Quality::OverSized
@@ -220,11 +232,13 @@ impl AllocStrategy for RoundRobinAllocator {
             match &item.quality {
                 Quality::Normal | Quality::OverSized { .. } => return Some(slot),
                 Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
+                    self.set_prev_alloc(Some(slot));  // Slot is Copy
                     return Some(slot);
                 }
                 _ => continue,
             }
         }
+        self.set_prev_alloc(None); // failed alloc, reset search indexing
         None
     }
 }
@@ -261,7 +275,7 @@ impl GreedyAllocator {
 }
 
 impl AllocStrategy for GreedyAllocator {
-    fn alloc(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
+    fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
         for dist in 0..3 * MAX_INVENTORY_SIZE {
             for slot in GreedyAllocator::slots_by_distance(dist) {
                 if !self.is_slot_available(&slot, item, inventory) {
