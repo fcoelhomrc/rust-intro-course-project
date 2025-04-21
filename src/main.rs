@@ -340,6 +340,11 @@ where
         *self.map_ids.entry(item.id).or_insert(0) += 1;
         *self.map_names.entry(item.name.clone()).or_insert(0) += 1;
         self.map_slots.entry(item.id).or_insert(vec![]).push(*slot);
+        // FIXME: assuming DateTime<Local> are unique
+        //        (no clashes between Items added at the 'same time')
+        if let Some(time) = item.timestamp {
+            self.map_dates.entry(time).and_modify(|v| *v = item.id);
+        }
     }
 
     fn get_item(&self, row: usize, shelf: usize, zone: usize) -> Option<&Item> {
@@ -370,6 +375,10 @@ where
         self.map_slots
             .entry(item.id)
             .and_modify(|vec| vec.retain(|s| *s != *slot));
+        if let Some(time) = item.timestamp {
+            // FIXME: if this returns None, something went wrong and needs to be handled
+            let kv = self.map_dates.remove_entry(&time);
+        }
 
         // clean-up empty entries
         // FIXME: inefficient, because iterates over HashMap when at most a single entry needs to
@@ -378,6 +387,7 @@ where
         self.map_ids.retain(|_, count| *count != 0);
         self.map_names.retain(|_, count| *count != 0);
         self.map_slots.retain(|_, vec| !vec.is_empty());
+        // no need to clean-up self.map_dates
     }
 
     fn ord_by_name(&self) -> Vec<&Item> {
