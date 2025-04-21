@@ -67,6 +67,7 @@ impl From<[usize; 3]> for Slot {
     }
 }
 
+#[derive(Clone)]
 enum Quality {
     Fragile {
         expiration_date: DateTime<Local>,
@@ -101,6 +102,7 @@ impl Debug for Quality {
     }
 }
 
+#[derive(Clone)]
 struct Item {
     id: usize,
     name: String,
@@ -130,14 +132,41 @@ impl Display for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let timestamp = self
             .timestamp
-            .map(|t| t.to_string())
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S %:z").to_string())
             .unwrap_or_else(|| "???".to_string());
 
-        write!(
-            f,
-            "[Item {}: {}] [Qty: {}, {}] [Created at: {}]",
-            self.id, self.name, self.quantity, self.quality, timestamp
-        )
+        match self.quality {
+            Quality::Fragile {
+                expiration_date,
+                max_row,
+            } => {
+                write!(
+                    f,
+                    "[Item {}: {}] [Qty: {}, {}] [Created at: {}] [Expires at: {}] [Must be stored at most at row {}]",
+                    self.id,
+                    self.name,
+                    self.quantity,
+                    self.quality,
+                    timestamp,
+                    expiration_date.format("%Y-%m-%d %H:%M:%S %:z"),
+                    max_row
+                )
+            }
+            Quality::OverSized { size } => {
+                write!(
+                    f,
+                    "[Item {}: {}] [Qty: {}, {}] [Created at: {}] [Requires {} contiguous zones]",
+                    self.id, self.name, self.quantity, self.quality, timestamp, size
+                )
+            }
+            Quality::Normal => {
+                write!(
+                    f,
+                    "[Item {}: {}] [Qty: {}, {}] [Created at: {}]",
+                    self.id, self.name, self.quantity, self.quality, timestamp
+                )
+            }
+        }
     }
 }
 
@@ -301,10 +330,11 @@ where
     allocator: A,
 
     // reverse-maps
-    map_ids: HashMap<usize, usize>,                   // id, count
-    map_names: HashMap<String, usize>,                // name, count
-    map_slots: HashMap<usize, Vec<Slot>>,             // id, list of slots
-    map_dates: BTreeMap<DateTime<Local>, Vec<usize>>, // date, list of ids
+    map_ids: HashMap<usize, usize>,       // id, count
+    map_names: HashMap<String, usize>,    // name, count
+    map_slots: HashMap<usize, Vec<Slot>>, // id, list of slots
+    // only used for Quality::Fragile items
+    map_dates: BTreeMap<DateTime<Local>, Vec<Slot>>, // date, list of ids
 }
 
 impl<A> Manager<A>
@@ -342,9 +372,14 @@ where
         self.map_slots.entry(item.id).or_insert(vec![]).push(*slot);
 
         match item.quality {
-            Quality::Fragile { expiration_date, .. } => {
-                    self.map_dates.entry(expiration_date.clone()).or_insert(vec![]).push(item.id);
-                }
+            Quality::Fragile {
+                expiration_date, ..
+            } => {
+                self.map_dates
+                    .entry(expiration_date.clone())
+                    .or_insert(vec![])
+                    .push(*slot);
+            }
             _ => {}
         }
     }
@@ -379,11 +414,12 @@ where
             .and_modify(|vec| vec.retain(|s| *s != *slot));
 
         match item.quality {
-            Quality::Fragile { expiration_date, .. } => {
-                    self.map_dates
-                        .entry(expiration_date)
-                        .and_modify(|vec| vec.retain(|id| *id != item.id));
-
+            Quality::Fragile {
+                expiration_date, ..
+            } => {
+                self.map_dates
+                    .entry(expiration_date)
+                    .and_modify(|vec| vec.retain(|s| *s != *slot));
             }
             _ => {}
         }
@@ -423,11 +459,19 @@ where
         self.map_slots.get(&id)
     }
 
-    fn find_expired(&self, date: DateTime<Local>) -> Vec<usize> {
+    // FIXME: currently returns IDs, which do not fully describe item.
+    //        We should probably store the Slots in the BTreeMap,
+    //        and this function should return clones for the matched Items
+    fn find_expired(&self, date: DateTime<Local>) -> Vec<Item> {
         self.map_dates
             .range(..=date)
             .flat_map(|(_, ids)| ids)
             .copied()
+            .map(|s| s.as_tuple())
+            .map(|(row, shelf, zone)| self.get_item(row, shelf, zone))
+            .filter(|opt| opt.is_some())
+            .map(|opt| opt.unwrap())
+            .cloned()
             .collect::<Vec<_>>()
     }
 }
@@ -436,7 +480,8 @@ fn main() {
     let mut inv = Manager::new(RoundRobinAllocator::default());
     // let mut inv = Manager::new(GreedyAllocator {});
 
-    let exp_date = NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
+    let exp_date =
+        NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
     let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
 
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }));
@@ -447,12 +492,21 @@ fn main() {
         "Bits",
         10,
         Quality::Fragile {
-            expiration_date: exp_date,
+            expiration_date: exp_date.clone(),
             max_row: 0,
         },
     ));
     inv.remove_item(0, 0, 0);
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
+    inv.insert_item(Item::new(
+        2,
+        "Bits",
+        30,
+        Quality::Fragile {
+            expiration_date: exp_date.clone(),
+            max_row: 0,
+        },
+    ));
 
     println!("{:#?}", inv);
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
