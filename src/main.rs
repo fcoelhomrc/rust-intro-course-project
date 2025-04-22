@@ -6,8 +6,8 @@ use std::fmt::{Debug, Display};
 
 mod errors;
 
-use errors::ManagerError;
 use crate::errors::ManagerError::FilteredItem;
+use errors::ManagerError;
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
 
@@ -181,7 +181,7 @@ impl Debug for Item {
 }
 
 // TODO: should be selectable AT COMPILE TIME
-trait AllocStrategy {
+trait AllocStrategy: Display + Debug {
     // FIXME: I don't like to require alloc to be &mut self,
     //        but using an internal state in RoundRobin requires it
     //        (otherwise we'd need to update internal state in a separate call,
@@ -248,6 +248,16 @@ impl Default for RoundRobinAllocator {
     }
 }
 
+impl Display for RoundRobinAllocator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "RoundRobinAllocator {{ prev_alloc: {:?} }}",
+            self.prev_alloc
+        )
+    }
+}
+
 impl AllocStrategy for RoundRobinAllocator {
     fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
         // round-robin
@@ -311,6 +321,12 @@ impl GreedyAllocator {
     }
 }
 
+impl Display for GreedyAllocator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GreedyAllocator")
+    }
+}
+
 impl AllocStrategy for GreedyAllocator {
     fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
         for dist in 0..=3 * (MAX_INVENTORY_SIZE - 1) {
@@ -332,13 +348,15 @@ impl AllocStrategy for GreedyAllocator {
 }
 
 // TODO: should be selectable AT RUN TIME
-trait Filter: Debug {
+trait Filter: Display + Debug {
     // Using &mut self to allow for internal states
     fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool;
 }
 
 #[derive(Debug)]
-struct LimitOverSized { max_allowed: usize }
+struct LimitOverSized {
+    max_allowed: usize,
+}
 impl LimitOverSized {
     fn new(max_allowed: usize) -> Self {
         LimitOverSized { max_allowed }
@@ -357,10 +375,19 @@ impl Filter for LimitOverSized {
     }
 }
 
+impl Display for LimitOverSized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LimitOverSized({})", self.max_allowed)
+    }
+}
+
 // TODO: Support a list of ids instead of a single Item id
 // TODO: Use reverse map to find IDs instead of searching (more efficient)
 #[derive(Debug)]
-struct LimitItemQuantity { id: usize, max_allowed: usize }
+struct LimitItemQuantity {
+    id: usize,
+    max_allowed: usize,
+}
 impl LimitItemQuantity {
     fn new(id: usize, max_allowed: usize) -> Self {
         LimitItemQuantity { id, max_allowed }
@@ -368,7 +395,9 @@ impl LimitItemQuantity {
 }
 impl Filter for LimitItemQuantity {
     fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
-        if item.id != self.id { return true };
+        if item.id != self.id {
+            return true;
+        };
         let total = inventory
             .values()
             .filter(|item| item.id == self.id)
@@ -378,9 +407,16 @@ impl Filter for LimitItemQuantity {
     }
 }
 
+impl Display for LimitItemQuantity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LimitItemQuantity({}, {})", self.id, self.max_allowed)
+    }
+}
 
 #[derive(Debug)]
-struct BanQuality { quality: Quality }
+struct BanQuality {
+    quality: Quality,
+}
 impl BanQuality {
     fn new(quality: Quality) -> Self {
         BanQuality { quality }
@@ -395,6 +431,11 @@ impl Filter for BanQuality {
     }
 }
 
+impl Display for BanQuality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BanQuality({})", self.quality)
+    }
+}
 
 #[derive(Debug)]
 struct Manager<A>
@@ -403,7 +444,7 @@ where
 {
     inventory: HashMap<Slot, Item>,
     allocator: A,
-    filters: Vec<Box<dyn Filter>>,  // need dynamic dispatch to hold different impls of Filter
+    filters: Vec<Box<dyn Filter>>, // need dynamic dispatch to hold different impls of Filter
 
     // reverse-maps
     map_ids: HashMap<usize, usize>,       // id, count
@@ -421,7 +462,7 @@ where
         Manager {
             inventory: HashMap::new(),
             allocator,
-            filters,  // TODO: impl method to initialize filter list
+            filters, // TODO: impl method to initialize filter list
 
             map_ids: HashMap::new(),
             map_names: HashMap::new(),
@@ -431,19 +472,24 @@ where
     }
 
     fn is_allowed_by_filters(&self, item: &Item) -> bool {
-        self.filters
-            .iter()
-            .all(|f| f.filter(item, &self.inventory))  // short-circuits
+        self.filters.iter().all(|f| f.filter(item, &self.inventory)) // short-circuits
     }
 
     fn insert_item(&mut self, item: Item) -> Result<(), ManagerError> {
         if !self.is_allowed_by_filters(&item) {
-            return Err(FilteredItem)  // short-circuit if some filter is triggered
+            return Err(FilteredItem {
+                item,
+                filters: self.filters.iter().map(|v| v.to_string()).collect(),
+            }); // short-circuit if some filter is triggered
         }
 
-        let slot = self.allocator
+        let slot = self
+            .allocator
             .alloc(&item, &self.inventory)
-            .ok_or_else(|| ManagerError::FailedAllocation)?;
+            .ok_or_else(|| ManagerError::FailedAllocation {
+                allocator: self.allocator.to_string(),
+                item: item.clone(),
+            })?;
 
         self._update_maps_on_insert(&slot, &item);
         self._insert_item(slot, item);
@@ -563,11 +609,15 @@ where
 }
 
 fn main() {
-
     let mut filters = Vec::<Box<dyn Filter>>::new();
     filters.push(Box::from(LimitOverSized { max_allowed: 1 }));
-    filters.push(Box::from(LimitItemQuantity { id: 0, max_allowed: 50 }));
-    filters.push(Box::from(BanQuality { quality: Quality::OverSized { size: 1 } }));
+    filters.push(Box::from(LimitItemQuantity {
+        id: 0,
+        max_allowed: 50,
+    }));
+    filters.push(Box::from(BanQuality {
+        quality: Quality::OverSized { size: 1 },
+    }));
 
     let mut inv = Manager::new(RoundRobinAllocator::default(), filters);
     // let mut inv = Manager::new(GreedyAllocator {}, filters);
@@ -576,9 +626,12 @@ fn main() {
         NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
     let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
 
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 })).unwrap();
-    inv.insert_item(Item::new(0, "Bolts", 40, Quality::Normal)).unwrap();
-    inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal)).unwrap();
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }))
+        .unwrap();
+    inv.insert_item(Item::new(0, "Bolts", 40, Quality::Normal))
+        .unwrap();
+    inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal))
+        .unwrap();
     inv.insert_item(Item::new(
         2,
         "Bits",
@@ -587,9 +640,11 @@ fn main() {
             expiration_date: exp_date.clone(),
             max_row: 0,
         },
-    )).unwrap();
+    ))
+    .unwrap();
     inv.remove_item(0, 0, 0);
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal)).unwrap();
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal))
+        .unwrap();
     inv.insert_item(Item::new(
         2,
         "Bits",
@@ -598,12 +653,14 @@ fn main() {
             expiration_date: exp_date.clone(),
             max_row: 0,
         },
-    )).unwrap();
+    ))
+    .unwrap();
 
     println!("{:#?}", inv);
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
     println!("Sorted by Name: {:#?}", sorted_items); // lifetime ends here (no further uses)
-    inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal)).unwrap();
+    inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal))
+        .unwrap();
     println!("Count with ID=0: {:#?}", inv.count_id(0));
     println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
     println!("Slots with ID=0: {:#?}", inv.find_id(0).unwrap());
