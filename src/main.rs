@@ -344,6 +344,28 @@ impl Filter for LimitOverSized {
     }
 }
 
+// TODO: Support a list of ids instead of a single Item id
+// TODO: Use reverse map to find IDs instead of searching (more efficient)
+#[derive(Debug)]
+struct LimitItemQuantity { id: usize, max_allowed: usize }
+impl LimitItemQuantity {
+    fn new(id: usize, max_allowed: usize) -> Self {
+        LimitItemQuantity { id, max_allowed }
+    }
+}
+impl Filter for LimitItemQuantity {
+    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
+        if item.id != self.id { return true };
+        let total = inventory
+            .values()
+            .filter(|item| item.id == self.id)
+            .map(|item| item.quantity)
+            .sum::<usize>();
+        total + item.quantity <= self.max_allowed
+    }
+}
+
+
 #[derive(Debug)]
 struct Manager<A>
 where
@@ -514,6 +536,7 @@ fn main() {
 
     let mut filters = Vec::<Box<dyn Filter>>::new();
     filters.push(Box::from(LimitOverSized { max_allowed: 1 }));
+    filters.push(Box::from(LimitItemQuantity { id: 0, max_allowed: 50 }));
 
     let mut inv = Manager::new(RoundRobinAllocator::default(), filters);
     // let mut inv = Manager::new(GreedyAllocator {}, filters);
@@ -523,7 +546,7 @@ fn main() {
     let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
 
     inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }));
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Bolts", 40, Quality::Normal));
     inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal));
     inv.insert_item(Item::new(
         2,
