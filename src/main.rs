@@ -340,7 +340,7 @@ impl Filter for LimitOverSized {
             .values()
             .filter(|item| matches!(item.quality, Quality::OverSized { .. }))
             .count();
-        count <= self.max_allowed
+        count < self.max_allowed
     }
 }
 
@@ -378,8 +378,17 @@ where
         }
     }
 
+    fn is_allowed_by_filters(&self, item: &Item) -> bool {
+        self.filters
+            .iter()
+            .all(|f| f.filter(item, &self.inventory))  // short-circuits
+    }
+
     fn insert_item(&mut self, item: Item) {
         // FIXME: should return a Result (Err = failed to allocate, no valid positions)
+        if !self.is_allowed_by_filters(&item) {
+            todo!()  // short-circuit if some filter is triggered
+        }
         let opt: Option<_> = self.allocator.alloc(&item, &self.inventory);
         let slot = opt.unwrap();
         self._update_maps_on_insert(&slot, &item);
