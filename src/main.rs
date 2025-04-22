@@ -1,10 +1,13 @@
-mod errors;
-
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use itertools::{Itertools, iproduct};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::From;
 use std::fmt::{Debug, Display};
+
+mod errors;
+
+use errors::ManagerError;
+
 
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
