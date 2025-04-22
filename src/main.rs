@@ -437,7 +437,6 @@ where
     }
 
     fn insert_item(&mut self, item: Item) -> Result<(), ManagerError> {
-        // FIXME: should return a Result (Err = failed to allocate, no valid positions)
         if !self.is_allowed_by_filters(&item) {
             return Err(FilteredItem)  // short-circuit if some filter is triggered
         }
@@ -577,9 +576,9 @@ fn main() {
         NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
     let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
 
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }));
-    inv.insert_item(Item::new(0, "Bolts", 40, Quality::Normal));
-    inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 })).unwrap();
+    inv.insert_item(Item::new(0, "Bolts", 40, Quality::Normal)).unwrap();
+    inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal)).unwrap();
     inv.insert_item(Item::new(
         2,
         "Bits",
@@ -588,9 +587,9 @@ fn main() {
             expiration_date: exp_date.clone(),
             max_row: 0,
         },
-    ));
+    )).unwrap();
     inv.remove_item(0, 0, 0);
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal));
+    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal)).unwrap();
     inv.insert_item(Item::new(
         2,
         "Bits",
@@ -599,12 +598,12 @@ fn main() {
             expiration_date: exp_date.clone(),
             max_row: 0,
         },
-    ));
+    )).unwrap();
 
     println!("{:#?}", inv);
     let sorted_items = inv.ord_by_name(); // active immutable borrow!
     println!("Sorted by Name: {:#?}", sorted_items); // lifetime ends here (no further uses)
-    inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal));
+    inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal)).unwrap();
     println!("Count with ID=0: {:#?}", inv.count_id(0));
     println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
     println!("Slots with ID=0: {:#?}", inv.find_id(0).unwrap());
