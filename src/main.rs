@@ -1,3 +1,5 @@
+mod errors;
+
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use itertools::{Itertools, iproduct};
 use std::collections::{BTreeMap, HashMap};
@@ -541,9 +543,6 @@ where
         self.map_slots.get(&id)
     }
 
-    // FIXME: currently returns IDs, which do not fully describe item.
-    //        We should probably store the Slots in the BTreeMap,
-    //        and this function should return clones for the matched Items
     fn find_expired(&self, date: DateTime<Local>) -> Vec<Item> {
         self.map_dates
             .range(..=date)
@@ -552,7 +551,7 @@ where
             .map(|s| s.as_tuple())
             .map(|(row, shelf, zone)| self.get_item(row, shelf, zone))
             .filter(|opt| opt.is_some())
-            .map(|opt| opt.unwrap())
+            .map(|opt| opt.unwrap()) // safe to unwrap
             .cloned()
             .collect::<Vec<_>>()
     }

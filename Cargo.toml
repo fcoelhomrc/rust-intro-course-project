@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 chrono = "*"
 itertools = "0.14.0"
+thiserror = "2.0.12"
