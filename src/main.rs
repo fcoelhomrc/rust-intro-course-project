@@ -1,13 +1,17 @@
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
-use itertools::{Itertools, iproduct};
+use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::From;
 use std::fmt::{Debug, Display};
+use allocators::{AllocStrategy, RoundRobinAllocator};
 
 mod errors;
+mod allocators;
+mod filters;
 
 use crate::errors::ManagerError::FilteredItem;
 use errors::ManagerError;
+use filters::{BanQuality, Filter, LimitItemQuantity, LimitOverSized};
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
 
@@ -177,263 +181,6 @@ impl Display for Item {
 impl Debug for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
-    }
-}
-
-// TODO: should be selectable AT COMPILE TIME
-trait AllocStrategy: Display + Debug {
-    // FIXME: I don't like to require alloc to be &mut self,
-    //        but using an internal state in RoundRobin requires it
-    //        (otherwise we'd need to update internal state in a separate call,
-    //        which might break the abstraction as GreedyAllocator doesn't need internal state)
-    fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot>;
-
-    fn is_slot_available(&self, slot: &Slot, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
-        let size = self.get_item_size(item);
-        let end = std::cmp::min(slot.zone + size, MAX_INVENTORY_SIZE);
-        // check if there are enough free zones from current position onwards
-        let is_blocked_forward = (slot.zone..end)
-            .any(|z| inventory.contains_key(&Slot::from((slot.row, slot.shelf, z))));
-        if is_blocked_forward {
-            return false;
-        }
-        // check if there are previous items blocking current position
-        let is_blocked_backward = (0..slot.zone)
-            // skip empty positions and return refs to items of occupied positions
-            .filter_map(|zone| {
-                inventory
-                    .get(&Slot::from((slot.row, slot.shelf, zone)))
-                    .map(|item| (item, zone))
-            })
-            // extract Item size of occupied positions
-            .map(|(item, zone)| (self.get_item_size(item), zone))
-            // check if it blocks current position
-            .any(|(size, zone)| size + zone > slot.zone);
-        !is_blocked_backward // -> is_available
-    }
-
-    fn get_item_size(&self, item: &Item) -> usize {
-        match item.quality {
-            Quality::Normal | Quality::Fragile { .. } => 1,
-            Quality::OverSized { size } => size,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct RoundRobinAllocator {
-    prev_alloc: Option<Slot>,
-}
-
-impl RoundRobinAllocator {
-    fn get_prev_alloc(&self) -> &Option<Slot> {
-        &self.prev_alloc
-    }
-
-    fn set_prev_alloc(&mut self, new_alloc: Option<Slot>) {
-        self.prev_alloc = new_alloc;
-    }
-
-    fn get_start_pos(&self) -> (usize, usize, usize) {
-        match &self.prev_alloc {
-            Some(slot) => slot.as_tuple(),
-            None => (0, 0, 0),
-        }
-    }
-}
-
-impl Default for RoundRobinAllocator {
-    fn default() -> Self {
-        Self { prev_alloc: None }
-    }
-}
-
-impl Display for RoundRobinAllocator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "RoundRobinAllocator {{ prev_alloc: {:?} }}",
-            self.prev_alloc
-        )
-    }
-}
-
-impl AllocStrategy for RoundRobinAllocator {
-    fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
-        // round-robin
-        let (row_start, shelf_start, zone_start) = self.get_start_pos();
-        for (row, shelf, zone) in iproduct!(
-            row_start..MAX_INVENTORY_SIZE,
-            shelf_start..MAX_INVENTORY_SIZE,
-            zone_start..MAX_INVENTORY_SIZE
-        ) {
-            let slot = Slot::from((row, shelf, zone));
-            // handles interactions with Quality::OverSized
-            if !self.is_slot_available(&slot, item, inventory) {
-                continue;
-            }
-            match &item.quality {
-                Quality::Normal | Quality::OverSized { .. } => return Some(slot),
-                Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
-                    self.set_prev_alloc(Some(slot)); // Slot is Copy
-                    return Some(slot);
-                }
-                _ => continue,
-            }
-        }
-        self.set_prev_alloc(None); // failed alloc, reset search indexing
-        None
-    }
-}
-
-#[derive(Debug)]
-struct GreedyAllocator {}
-
-impl GreedyAllocator {
-    // I think this implementation is a bit messy, but it was the best I could come up with.
-    // My main worry was ensuring lazy-evaluation,
-    // because the number of possibilities are combinatorial with dist.
-    // For a given distance, return an iterator over all possible tuples with that distance
-    // where distance is defined as the Manhattan distance d(x,y,z) = x + y + z
-    // First, we generate all sets of numbers summing to dist
-    // Then, we generate all possible permutations (itertools)
-    // Then, we filter out repeated permutations (itertools)
-    // Finally, we return each Slot
-    fn slots_by_distance(dist: usize) -> impl Iterator<Item = Slot> {
-        (0..=dist)
-            .flat_map(move |i| {
-                (0..=dist - i).flat_map(move |j| {
-                    let k = dist - i - j;
-                    [i, j, k]
-                        .iter()
-                        .copied()
-                        .permutations(3)
-                        .collect::<Vec<_>>()
-                })
-            })
-            .unique()
-            .filter(|perm| {
-                perm[0] < MAX_INVENTORY_SIZE
-                    && perm[1] < MAX_INVENTORY_SIZE
-                    && perm[2] < MAX_INVENTORY_SIZE
-            })
-            .map(|perm| Slot::from((perm[0], perm[1], perm[2])))
-    }
-}
-
-impl Display for GreedyAllocator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GreedyAllocator")
-    }
-}
-
-impl AllocStrategy for GreedyAllocator {
-    fn alloc(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> Option<Slot> {
-        for dist in 0..=3 * (MAX_INVENTORY_SIZE - 1) {
-            for slot in GreedyAllocator::slots_by_distance(dist) {
-                if !self.is_slot_available(&slot, item, inventory) {
-                    continue;
-                }
-                match &item.quality {
-                    Quality::Normal | Quality::OverSized { .. } => return Some(slot),
-                    Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
-                        return Some(slot);
-                    }
-                    _ => continue,
-                }
-            }
-        }
-        None
-    }
-}
-
-// TODO: should be selectable AT RUN TIME
-trait Filter: Display + Debug {
-    // Using &mut self to allow for internal states
-    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool;
-}
-
-#[derive(Debug)]
-struct LimitOverSized {
-    max_allowed: usize,
-}
-impl LimitOverSized {
-    fn new(max_allowed: usize) -> Self {
-        LimitOverSized { max_allowed }
-    }
-}
-impl Filter for LimitOverSized {
-    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
-        if matches!(item.quality, Quality::Normal | Quality::Fragile { .. }) {
-            return true;
-        }
-        let count = inventory
-            .values()
-            .filter(|item| matches!(item.quality, Quality::OverSized { .. }))
-            .count();
-        count < self.max_allowed
-    }
-}
-
-impl Display for LimitOverSized {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "LimitOverSized({})", self.max_allowed)
-    }
-}
-
-// TODO: Support a list of ids instead of a single Item id
-// TODO: Use reverse map to find IDs instead of searching (more efficient)
-#[derive(Debug)]
-struct LimitItemQuantity {
-    id: usize,
-    max_allowed: usize,
-}
-impl LimitItemQuantity {
-    fn new(id: usize, max_allowed: usize) -> Self {
-        LimitItemQuantity { id, max_allowed }
-    }
-}
-impl Filter for LimitItemQuantity {
-    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
-        if item.id != self.id {
-            return true;
-        };
-        let total = inventory
-            .values()
-            .filter(|item| item.id == self.id)
-            .map(|item| item.quantity)
-            .sum::<usize>();
-        total + item.quantity <= self.max_allowed
-    }
-}
-
-impl Display for LimitItemQuantity {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "LimitItemQuantity({}, {})", self.id, self.max_allowed)
-    }
-}
-
-#[derive(Debug)]
-struct BanQuality {
-    quality: Quality,
-}
-impl BanQuality {
-    fn new(quality: Quality) -> Self {
-        BanQuality { quality }
-    }
-}
-impl Filter for BanQuality {
-    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
-        match (&self.quality, &item.quality) {
-            (q1, q2) if q1 == q2 => false,
-            (_, _) => true,
-        }
-    }
-}
-
-impl Display for BanQuality {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BanQuality({})", self.quality)
     }
 }
 
@@ -610,14 +357,9 @@ where
 
 fn main() {
     let mut filters = Vec::<Box<dyn Filter>>::new();
-    filters.push(Box::from(LimitOverSized { max_allowed: 1 }));
-    filters.push(Box::from(LimitItemQuantity {
-        id: 0,
-        max_allowed: 50,
-    }));
-    filters.push(Box::from(BanQuality {
-        quality: Quality::OverSized { size: 1 },
-    }));
+    filters.push(Box::from(LimitOverSized::new(1)));
+    filters.push(Box::from(LimitItemQuantity::new(0, 50)));
+    filters.push(Box::from(BanQuality::new(Quality::OverSized { size: 1 })));
 
     let mut inv = Manager::new(RoundRobinAllocator::default(), filters);
     // let mut inv = Manager::new(GreedyAllocator {}, filters);

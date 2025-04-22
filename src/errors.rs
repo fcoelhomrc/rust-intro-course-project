@@ -1,7 +1,6 @@
 use thiserror::Error;
 
-use crate::{AllocStrategy, Filter, Item, Slot};
-
+use crate::{Item, Slot};
 #[derive(Error, Debug)]
 pub enum ManagerError {
     #[error("{item:?} was rejected by some filter: {filters:?}")]
