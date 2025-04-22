@@ -33,7 +33,7 @@ Para a alocação de lugares no armazém, devemos aceitar várias estratégias, 
 - ✅ A colocação deve seguir um estilo round robin, ignorando lugares que possam ter sido abertos com a saída de itens entretanto.
 
 
-❌ Por fim, o nosso programa deve ter a capacidade de manter uma lista com filtros para decidir se certos itens podem entrar no nosso armazém. Para designar os filtros, devemos criar uma trait com um predicado que aceite o estado do armazém e o item.
+✅ Por fim, o nosso programa deve ter a capacidade de manter uma lista com filtros para decidir se certos itens podem entrar no nosso armazém. Para designar os filtros, devemos criar uma trait com um predicado que aceite o estado do armazém e o item.
 
 A nossa lista deve ser capaz de guardar diversas implementações de filtros que possamos criar. Antes de adicionar os itens ao nosso armazém, teremos que verificar que eles são de facto aceites pela nossa lista de filtros.
 
