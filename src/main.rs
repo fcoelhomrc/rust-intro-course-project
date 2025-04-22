@@ -276,6 +276,15 @@ impl AllocStrategy for RoundRobinAllocator {
 struct GreedyAllocator {}
 
 impl GreedyAllocator {
+    // I think this implementation is a bit messy, but it was the best I could come up with.
+    // My main worry was ensuring lazy-evaluation,
+    // because the number of possibilities are combinatorial with dist.
+    // For a given distance, return an iterator over all possible tuples with that distance
+    // where distance is defined as the Manhattan distance d(x,y,z) = x + y + z
+    // First, we generate all sets of numbers summing to dist
+    // Then, we generate all possible permutations (itertools)
+    // Then, we filter out repeated permutations (itertools)
+    // Finally, we return each Slot
     fn slots_by_distance(dist: usize) -> impl Iterator<Item = Slot> {
         (0..=dist)
             .flat_map(move |i| {
