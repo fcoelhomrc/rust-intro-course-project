@@ -319,11 +319,12 @@ impl AllocStrategy for GreedyAllocator {
 }
 
 // TODO: should be selectable AT RUN TIME
-trait Filter {
+trait Filter: Debug {
     // Using &mut self to allow for internal states
-    fn filter(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool;
+    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool;
 }
 
+#[derive(Debug)]
 struct LimitOverSized { max_allowed: usize }
 impl LimitOverSized {
     fn new(max_allowed: usize) -> Self {
@@ -343,18 +344,14 @@ impl Filter for LimitOverSized {
     }
 }
 
-
-
-
 #[derive(Debug)]
-struct Manager<A, F>
+struct Manager<A>
 where
     A: AllocStrategy,
-    F: Filter,
 {
     inventory: HashMap<Slot, Item>,
     allocator: A,
-    filters: Vec<F>,
+    filters: Vec<Box<dyn Filter>>,  // need dynamic dispatch to hold different impls of Filter
 
     // reverse-maps
     map_ids: HashMap<usize, usize>,       // id, count
@@ -364,15 +361,15 @@ where
     map_dates: BTreeMap<DateTime<Local>, Vec<Slot>>, // date, list of ids
 }
 
-impl<A, F> Manager<A, F>
+impl<A> Manager<A>
 where
     A: AllocStrategy,
 {
-    fn new(allocator: A) -> Manager<A, F> {
+    fn new(allocator: A, filters: Vec<Box<dyn Filter>>) -> Manager<A> {
         Manager {
             inventory: HashMap::new(),
             allocator,
-            filters: Vec::new(),  // TODO: impl method to initialize filter list
+            filters,  // TODO: impl method to initialize filter list
 
             map_ids: HashMap::new(),
             map_names: HashMap::new(),
@@ -505,8 +502,12 @@ where
 }
 
 fn main() {
-    let mut inv = Manager::new(RoundRobinAllocator::default());
-    // let mut inv = Manager::new(GreedyAllocator {});
+
+    let mut filters = Vec::<Box<dyn Filter>>::new();
+    filters.push(Box::from(LimitOverSized { max_allowed: 1 }));
+
+    let mut inv = Manager::new(RoundRobinAllocator::default(), filters);
+    // let mut inv = Manager::new(GreedyAllocator {}, filters);
 
     let exp_date =
         NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
