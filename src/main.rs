@@ -67,7 +67,7 @@ impl From<[usize; 3]> for Slot {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 enum Quality {
     Fragile {
         expiration_date: DateTime<Local>,
@@ -367,6 +367,23 @@ impl Filter for LimitItemQuantity {
 
 
 #[derive(Debug)]
+struct BanQuality { quality: Quality }
+impl BanQuality {
+    fn new(quality: Quality) -> Self {
+        BanQuality { quality }
+    }
+}
+impl Filter for BanQuality {
+    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
+        match (&self.quality, &item.quality) {
+            (q1, q2) if q1 == q2 => false,
+            (_, _) => true,
+        }
+    }
+}
+
+
+#[derive(Debug)]
 struct Manager<A>
 where
     A: AllocStrategy,
@@ -537,6 +554,7 @@ fn main() {
     let mut filters = Vec::<Box<dyn Filter>>::new();
     filters.push(Box::from(LimitOverSized { max_allowed: 1 }));
     filters.push(Box::from(LimitItemQuantity { id: 0, max_allowed: 50 }));
+    filters.push(Box::from(BanQuality { quality: Quality::OverSized { size: 1 } }));
 
     let mut inv = Manager::new(RoundRobinAllocator::default(), filters);
     // let mut inv = Manager::new(GreedyAllocator {}, filters);
