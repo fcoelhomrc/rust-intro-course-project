@@ -319,15 +319,42 @@ impl AllocStrategy for GreedyAllocator {
 }
 
 // TODO: should be selectable AT RUN TIME
-trait Filter {}
+trait Filter {
+    // Using &mut self to allow for internal states
+    fn filter(&mut self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool;
+}
+
+struct LimitOverSized { max_allowed: usize }
+impl LimitOverSized {
+    fn new(max_allowed: usize) -> Self {
+        LimitOverSized { max_allowed }
+    }
+}
+impl Filter for LimitOverSized {
+    fn filter(&self, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
+        if matches!(item.quality, Quality::Normal | Quality::Fragile { .. }) {
+            return true;
+        }
+        let count = inventory
+            .values()
+            .filter(|item| matches!(item.quality, Quality::OverSized { .. }))
+            .count();
+        count <= self.max_allowed
+    }
+}
+
+
+
 
 #[derive(Debug)]
-struct Manager<A>
+struct Manager<A, F>
 where
     A: AllocStrategy,
+    F: Filter,
 {
     inventory: HashMap<Slot, Item>,
     allocator: A,
+    filters: Vec<F>,
 
     // reverse-maps
     map_ids: HashMap<usize, usize>,       // id, count
@@ -337,14 +364,15 @@ where
     map_dates: BTreeMap<DateTime<Local>, Vec<Slot>>, // date, list of ids
 }
 
-impl<A> Manager<A>
+impl<A, F> Manager<A, F>
 where
     A: AllocStrategy,
 {
-    fn new(allocator: A) -> Manager<A> {
+    fn new(allocator: A) -> Manager<A, F> {
         Manager {
             inventory: HashMap::new(),
             allocator,
+            filters: Vec::new(),  // TODO: impl method to initialize filter list
 
             map_ids: HashMap::new(),
             map_names: HashMap::new(),
