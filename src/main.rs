@@ -7,8 +7,7 @@ use std::fmt::{Debug, Display};
 mod errors;
 
 use errors::ManagerError;
-
-
+use crate::errors::ManagerError::FilteredItem;
 // NOTE: Quality::Fragile is handled as follows:
 //       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
 
@@ -437,15 +436,19 @@ where
             .all(|f| f.filter(item, &self.inventory))  // short-circuits
     }
 
-    fn insert_item(&mut self, item: Item) {
+    fn insert_item(&mut self, item: Item) -> Result<(), ManagerError> {
         // FIXME: should return a Result (Err = failed to allocate, no valid positions)
         if !self.is_allowed_by_filters(&item) {
-            todo!()  // short-circuit if some filter is triggered
+            return Err(FilteredItem)  // short-circuit if some filter is triggered
         }
-        let opt: Option<_> = self.allocator.alloc(&item, &self.inventory);
-        let slot = opt.unwrap();
+
+        let slot = self.allocator
+            .alloc(&item, &self.inventory)
+            .ok_or_else(|| ManagerError::FailedAllocation)?;
+
         self._update_maps_on_insert(&slot, &item);
-        self._insert_item(slot, item)
+        self._insert_item(slot, item);
+        Ok(())
     }
 
     fn _insert_item(&mut self, slot: Slot, mut item: Item) {
