@@ -408,6 +408,15 @@ mod tests {
             assert!(&ordered[9..9].iter().all_equal());
             assert!(&ordered[9..9].iter().all(|x| **x == item1));
         }
+
+        assert_eq!(manager.count_id(0), 6);
+        assert_eq!(manager.count_id(1), 1);
+        assert_eq!(manager.count_id(2), 3);
+
+        assert_eq!(manager.count_name("Flour"), 6);
+        assert_eq!(manager.count_name("Wood"), 1);
+        assert_eq!(manager.count_name("Glass"), 3);
+
     }
 }
 
