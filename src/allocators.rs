@@ -159,6 +159,12 @@ impl GreedyAllocator {
     }
 }
 
+impl Default for GreedyAllocator {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
 impl Display for GreedyAllocator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "GreedyAllocator")

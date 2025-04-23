@@ -1,5 +1,6 @@
 use allocators::{AllocStrategy, RoundRobinAllocator};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
+use dialoguer::{theme::ColorfulTheme, Input, MultiSelect};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::From;
@@ -439,57 +440,49 @@ mod tests {
     }
 }
 
+
 fn main() {
-    let mut filters = Vec::<Box<dyn Filter>>::new();
-    filters.push(Box::from(LimitOverSized::new(1)));
-    filters.push(Box::from(LimitItemQuantity::new(0, 50)));
-    filters.push(Box::from(BanQuality::new(Quality::OverSized { size: 1 })));
 
-    let mut inv = Manager::new(RoundRobinAllocator::default(), filters);
-    // let mut inv = Manager::new(GreedyAllocator {}, filters);
+    let manager = Manager::new(RoundRobinAllocator::default(), Vec::new());
 
-    let exp_date =
-        NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
-    let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
 
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::OverSized { size: 2 }))
-        .unwrap();
-    inv.insert_item(Item::new(0, "Bolts", 40, Quality::Normal))
-        .unwrap();
-    inv.insert_item(Item::new(1, "Screws", 10, Quality::Normal))
-        .unwrap();
-    inv.insert_item(Item::new(
-        2,
-        "Bits",
-        10,
-        Quality::Fragile {
-            expiration_date: exp_date.clone(),
-            max_row: 0,
-        },
-    ))
-    .unwrap();
-    inv.remove_item(0, 0, 0);
-    inv.insert_item(Item::new(0, "Bolts", 10, Quality::Normal))
-        .unwrap();
-    inv.insert_item(Item::new(
-        2,
-        "Bits",
-        30,
-        Quality::Fragile {
-            expiration_date: exp_date.clone(),
-            max_row: 0,
-        },
-    ))
-    .unwrap();
 
-    println!("{:#?}", inv);
-    let sorted_items = inv.ord_by_name(); // active immutable borrow!
-    println!("Sorted by Name: {:#?}", sorted_items); // lifetime ends here (no further uses)
-    inv.insert_item(Item::new(2, "Plates", 10, Quality::Normal))
+    let multiselected = &[
+        "Ice Cream",
+        "Vanilla Cupcake",
+        "Chocolate Muffin",
+        "A Pile of sweet, sweet mustard",
+    ];
+    let defaults = &[false, false, true, false];
+    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt("Pick your food")
+        .items(&multiselected[..])
+        .defaults(&defaults[..])
+        .interact()
         .unwrap();
-    println!("Count with ID=0: {:#?}", inv.count_id(0));
-    println!("Count with Name=Bolts: {:#?}", inv.count_name("Bolts"));
-    println!("Slots with ID=0: {:#?}", inv.find_id(0).unwrap());
 
-    println!("Expired items: {:#?}", inv.find_expired(Local::now()));
+    if selections.is_empty() {
+        println!("You did not select anything :(");
+    } else {
+        println!("You selected these things:");
+        for selection in selections {
+            println!("  {}", multiselected[selection]);
+        }
+    }
+
+    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt("Pick your food")
+        .items(&multiselected[..])
+        .defaults(&defaults[..])
+        .max_length(2)
+        .interact()
+        .unwrap();
+    if selections.is_empty() {
+        println!("You did not select anything :(");
+    } else {
+        println!("You selected these things:");
+        for selection in selections {
+            println!("  {}", multiselected[selection]);
+        }
+    }
 }
