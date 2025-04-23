@@ -64,7 +64,14 @@ impl RoundRobinAllocator {
 
     fn get_start_pos(&self) -> (usize, usize, usize) {
         match &self.prev_alloc {
-            Some(slot) => slot.as_tuple(),
+            Some(slot) => {
+                let tuple = slot.as_tuple();
+                (
+                    if tuple.0 == MAX_INVENTORY_SIZE - 1 { 0 } else { tuple.0 },
+                    if tuple.1 == MAX_INVENTORY_SIZE - 1 { 0 } else { tuple.1 },
+                    if tuple.2 == MAX_INVENTORY_SIZE - 1 { 0 } else { tuple.2 },
+                )
+            },
             None => (0, 0, 0),
         }
     }
@@ -118,7 +125,7 @@ impl AllocStrategy for RoundRobinAllocator {
 }
 
 #[derive(Debug)]
-struct GreedyAllocator {}
+pub struct GreedyAllocator {}
 
 impl GreedyAllocator {
     // I think this implementation is a bit messy, but it was the best I could come up with.

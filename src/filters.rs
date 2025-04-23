@@ -105,7 +105,6 @@ mod tests {
     use crate::errors::ManagerError;
     use crate::{Item, MAX_INVENTORY_SIZE, Manager, Quality, Slot};
     use chrono::{Local, NaiveDateTime, TimeZone};
-    use std::char::MAX;
     #[test]
     fn test_filters() {
         let mut filters = Vec::<Box<dyn Filter>>::new();

@@ -362,6 +362,43 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{Item, MAX_INVENTORY_SIZE, Manager, Quality, Slot};
+    use crate::allocators::{RoundRobinAllocator, GreedyAllocator};
+    use crate::errors::ManagerError;
+    use chrono::{Local, NaiveDateTime, TimeZone};
+    #[test]
+    fn test_manager() {
+        let exp_date =
+            NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
+
+        // no filters, RoundRobin
+        let mut manager = Manager::new(RoundRobinAllocator::default(), Vec::new());
+        // let mut manager = Manager::new(GreedyAllocator {}, Vec::new());
+
+        let item0 = Item::new(0, "Flour", 10, Quality::Normal);
+        let item1 = Item::new(1, "Wood", 5, Quality::OverSized { size: 2 });
+        let item2 = Item::new(2, "Glass", 2, Quality::Fragile { expiration_date: exp_date, max_row: 1 });
+
+        manager.insert_item(item0.clone()).unwrap();  // Normal
+        manager.insert_item(item0.clone()).unwrap();  // Normal
+        manager.insert_item(item0.clone()).unwrap();  // Normal
+        manager.insert_item(item0.clone()).unwrap();  // Normal
+        println!("{:#?}", manager);
+        manager.insert_item(item1.clone()).unwrap();  // OverSized
+        manager.insert_item(item0.clone()).unwrap();  // Normal
+        manager.insert_item(item2.clone()).unwrap();  // Fragile
+        manager.insert_item(item2.clone()).unwrap();  // Fragile
+        manager.insert_item(item0.clone()).unwrap();  // Normal
+        manager.insert_item(item2.clone()).unwrap();  // Fragile
+
+        println!("{:#?}", manager);
+
+    }
+}
+
 fn main() {
     let mut filters = Vec::<Box<dyn Filter>>::new();
     filters.push(Box::from(LimitOverSized::new(1)));
