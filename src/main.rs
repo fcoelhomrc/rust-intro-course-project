@@ -417,6 +417,11 @@ mod tests {
         assert_eq!(manager.count_name("Wood"), 1);
         assert_eq!(manager.count_name("Glass"), 3);
 
+        let slot = manager.find_id(1).unwrap();
+        assert_eq!(slot.len(), 1);
+        let slot = slot[0];
+        assert_eq!(slot, Slot::from((0, 1, 1)));
+
     }
 }
 
