@@ -422,6 +422,9 @@ mod tests {
         let slot = slot[0];
         assert_eq!(slot, Slot::from((0, 1, 1)));
 
+        let expired = manager.find_expired(Local::now());
+        assert_eq!(expired.len(), 3);
+        assert!(expired.iter().all(|item| item == &item2));
     }
 }
 
