@@ -1,3 +1,11 @@
+# Running the project
+
+`cargo test` to run unit tests which validate the manager, allocators, and filters.
+
+`cargo run` to run the TUI. 
+It was implemented with the `dialoguer` and `console` crates.
+In multi-select prompts, use the space bar to `select` and hit `enter` to commit.
+
 # Project requirements
 
 O projeto da formação é elaborar um gestor de inventário modular eficiente e versátil.

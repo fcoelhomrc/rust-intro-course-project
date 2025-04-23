@@ -443,9 +443,7 @@ mod tests {
 }
 
 
-
 fn main() {
-
     // HARDCODED - CHANGE HERE
     let allocator = RoundRobinAllocator::default();
     // let allocator = GreedyAllocator::default();
@@ -490,6 +488,7 @@ fn main() {
     // INIT MANAGER
     let mut manager = Manager::new(allocator, filters);
 
+    // CLI
     loop {
         let selections = &[
             "Insert item",
