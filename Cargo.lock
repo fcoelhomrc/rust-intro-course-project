@@ -241,6 +241,7 @@ name = "rust-intro-course-project"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "console",
  "dialoguer",
  "itertools",
  "thiserror 2.0.12",

@@ -1,8 +1,9 @@
 use allocators::{AllocStrategy, RoundRobinAllocator};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
-use dialoguer::{theme::ColorfulTheme, Input, MultiSelect};
+use dialoguer::{theme::ColorfulTheme, Input, MultiSelect, Select, Confirm};
+use console::style;
 use itertools::Itertools;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::From;
 use std::fmt::{Debug, Display};
 
@@ -12,6 +13,7 @@ mod filters;
 
 use crate::errors::ManagerError;
 use filters::{BanQuality, Filter, LimitItemQuantity, LimitOverSized};
+use crate::allocators::GreedyAllocator;
 
 // Note: keep MAX_INVENTORY_SIZE >= 3 for cargo tests to be valid
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
@@ -441,48 +443,175 @@ mod tests {
 }
 
 
+
 fn main() {
 
-    let manager = Manager::new(RoundRobinAllocator::default(), Vec::new());
+    // HARDCODED - CHANGE HERE
+    let allocator = RoundRobinAllocator::default();
+    // let allocator = GreedyAllocator::default();
 
-
-
+    // PRESET FILTERS
+    let tmp_string = format!("Ban over-sized items with size {MAX_INVENTORY_SIZE}");
+    let tmp = tmp_string.as_str();
     let multiselected = &[
-        "Ice Cream",
-        "Vanilla Cupcake",
-        "Chocolate Muffin",
-        "A Pile of sweet, sweet mustard",
+        "Max. 1 over-sized item allowed",
+        "Max. 2 over-sized item allowed",
+        "Max. 50 units of item ID:0",
+        tmp,
     ];
-    let defaults = &[false, false, true, false];
+
+    let mut filters = Vec::<Box<dyn Filter>>::new();
+    filters.push(Box::from(LimitOverSized::new(1)));
+    filters.push(Box::from(LimitOverSized::new(2)));
+    filters.push(Box::from(LimitItemQuantity::new(0, 50)));
+    filters.push(Box::from(BanQuality::new(Quality::OverSized {
+        size: MAX_INVENTORY_SIZE,
+    })));
+
+    // CHOOSE FILTERS FROM PRESETS
+    let defaults = &[false, false, false, false];
     let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("Pick your food")
+        .with_prompt("Pick your filters")
         .items(&multiselected[..])
         .defaults(&defaults[..])
         .interact()
         .unwrap();
 
-    if selections.is_empty() {
-        println!("You did not select anything :(");
-    } else {
-        println!("You selected these things:");
-        for selection in selections {
-            println!("  {}", multiselected[selection]);
-        }
+    if !selections.is_empty() {
+        let keep: HashSet<usize> = selections.iter().copied().collect();
+        let mut i = 0;
+        filters.retain(|_| {
+            let keep_it = keep.contains(&i);
+            i += 1;
+            keep_it
+        });
     }
 
-    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("Pick your food")
-        .items(&multiselected[..])
-        .defaults(&defaults[..])
-        .max_length(2)
-        .interact()
-        .unwrap();
-    if selections.is_empty() {
-        println!("You did not select anything :(");
-    } else {
-        println!("You selected these things:");
-        for selection in selections {
-            println!("  {}", multiselected[selection]);
-        }
+    // INIT MANAGER
+    let mut manager = Manager::new(allocator, filters);
+
+    loop {
+        let selections = &[
+            "Insert item",
+            "Remove item",
+            "Locate item",
+            "Find items by ID",
+            "Find items by name",
+            "Find expired items",
+            "List all items",
+            "Quit",
+        ];
+
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Pick your allocation method")
+            .default(0)
+            .items(&selections[..])
+            .interact()
+            .unwrap();
+
+        match selection {
+            0 => {
+                let id: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input ID: ")
+                    .interact_text()
+                    .unwrap();
+                let name: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input name: ")
+                    .interact_text()
+                    .unwrap();
+                let quantity: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input quantity: ")
+                    .interact_text()
+                    .unwrap();
+                let quality_selections = &[
+                    "Normal",
+                    "Over-sized",
+                    "Fragile",
+                ];
+                let quality_selection = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input quality: ")
+                    .default(0)
+                    .items(&quality_selections[..])
+                    .interact()
+                    .unwrap();
+                let item = match quality_selection {
+                    0 => Item::new(id, name.as_str(), quantity, Quality::Normal),
+                    1 => {
+                        let size: usize = Input::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Input size: ")
+                            .interact_text()
+                            .unwrap();
+                        Item::new(id, name.as_str(), quantity, Quality::OverSized { size })
+                    },
+                    2 => {
+                        let exp_date: String = Input::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Input expiration date (%Y-%m-%d %H:%M:%S): ")
+                            .interact_text()
+                            .unwrap();
+                        let exp_date = NaiveDateTime::parse_from_str(
+                            exp_date.as_str(), "%Y-%m-%d %H:%M:%S"
+                        ).unwrap();
+                        let exp_date = Local.from_local_datetime(&exp_date).unwrap();
+
+                        let max_row: usize = Input::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Input max. row allowed: ")
+                            .interact_text()
+                            .unwrap();
+
+                        Item::new(id, name.as_str(), quantity, Quality::Fragile { expiration_date: exp_date, max_row })
+                    },
+                    _ => todo!()
+                };
+                let result = manager.insert_item(item);
+                match result {
+                    Ok(_) => {
+                        println!("{}", style("Item was inserted successfully!").green());
+                    },
+                    Err(ManagerError::FilteredItem { .. }) => {
+                        println!("{}", style("Filters do not allow this item!").red());
+                    },
+                    Err(ManagerError::FailedAllocation { .. }) => {
+                        println!("{}", style("Allocator could not find a suitable slot for this item!").red());
+                    },
+                    _ => todo!()
+                }
+
+            },
+            1 => {
+                let row: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input row: ")
+                    .interact_text()
+                    .unwrap();
+                let shelf: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input shelf: ")
+                    .interact_text()
+                    .unwrap();
+                let zone: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input zone: ")
+                    .interact_text()
+                    .unwrap();
+                manager.remove_item(row, shelf, zone);
+            },
+            2 => {
+                let id: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input ID: ")
+                    .interact_text()
+                    .unwrap();
+                let result = manager.find_id(id);
+                match result {
+                    Some(vec) => {
+                        println!("{} {:#?}", style("Found at: ").green(), vec);
+                    },
+                    None => {
+                        println!("{}", style("Not found!").red());
+                    }
+                }
+            }
+            _ => unimplemented!()
+        };
+
+
     }
+
+
 }

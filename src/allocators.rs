@@ -2,6 +2,7 @@ use crate::{Item, MAX_INVENTORY_SIZE, Quality, Slot};
 use itertools::{Itertools, iproduct};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
+use std::any::Any;
 
 // TODO: should be selectable AT COMPILE TIME
 pub trait AllocStrategy: Display + Debug {
@@ -47,6 +48,7 @@ pub trait AllocStrategy: Display + Debug {
         }
     }
 }
+
 
 #[derive(Debug)]
 pub struct RoundRobinAllocator {
