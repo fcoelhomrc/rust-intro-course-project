@@ -368,6 +368,8 @@ mod tests {
     use crate::allocators::{RoundRobinAllocator, GreedyAllocator};
     use crate::errors::ManagerError;
     use chrono::{Local, NaiveDateTime, TimeZone};
+    use itertools::Itertools;
+
     #[test]
     fn test_manager() {
         let exp_date =
@@ -386,7 +388,6 @@ mod tests {
         manager.insert_item(item0.clone()).unwrap();  // Normal
         manager.insert_item(item0.clone()).unwrap();  // Normal
         manager.insert_item(item0.clone()).unwrap();  // Normal
-        println!("{:#?}", manager);
         manager.insert_item(item1.clone()).unwrap();  // OverSized
         manager.insert_item(item0.clone()).unwrap();  // Normal
         manager.insert_item(item2.clone()).unwrap();  // Fragile
@@ -394,8 +395,19 @@ mod tests {
         manager.insert_item(item0.clone()).unwrap();  // Normal
         manager.insert_item(item2.clone()).unwrap();  // Fragile
 
-        println!("{:#?}", manager);
-
+        {
+            let item0 = Item::new(0, "Flour", 10, Quality::Normal);
+            let item1 = Item::new(1, "Wood", 5, Quality::OverSized { size: 2 });
+            let item2 = Item::new(2, "Glass", 2, Quality::Fragile { expiration_date: exp_date, max_row: 1 });
+            let ordered = manager.ord_by_name();
+            assert_eq!(ordered.len(), 10);
+            assert!(&ordered[0..6].iter().all_equal());
+            assert!(&ordered[0..6].iter().all(|x| **x == item0));
+            assert!(&ordered[6..9].iter().all_equal());
+            assert!(&ordered[6..9].iter().all(|x| **x == item2));
+            assert!(&ordered[9..9].iter().all_equal());
+            assert!(&ordered[9..9].iter().all(|x| **x == item1));
+        }
     }
 }
 
