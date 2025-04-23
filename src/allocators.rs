@@ -13,8 +13,14 @@ pub trait AllocStrategy: Display + Debug {
 
     fn is_slot_available(&self, slot: &Slot, item: &Item, inventory: &HashMap<Slot, Item>) -> bool {
         let size = self.get_item_size(item);
-        let end = std::cmp::min(slot.zone + size, MAX_INVENTORY_SIZE);
+        if slot.zone + size > MAX_INVENTORY_SIZE {
+            return false;
+        }
+
+        let end = slot.zone + size;
+        // let end = std::cmp::min(slot.zone + size, MAX_INVENTORY_SIZE);
         // check if there are enough free zones from current position onwards
+        println!("TEST SLOT {} {}", slot.zone, end);
         let is_blocked_forward = (slot.zone..end)
             .any(|z| inventory.contains_key(&Slot::from((slot.row, slot.shelf, z))));
         if is_blocked_forward {
@@ -96,7 +102,10 @@ impl AllocStrategy for RoundRobinAllocator {
                 continue;
             }
             match &item.quality {
-                Quality::Normal | Quality::OverSized { .. } => return Some(slot),
+                Quality::Normal | Quality::OverSized { .. } => {
+                    self.set_prev_alloc(Some(slot)); // Slot is Copy
+                    return Some(slot)
+                },
                 Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
                     self.set_prev_alloc(Some(slot)); // Slot is Copy
                     return Some(slot);
@@ -168,4 +177,72 @@ impl AllocStrategy for GreedyAllocator {
         }
         None
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RoundRobinAllocator, GreedyAllocator};
+    use crate::{Item, Slot, Quality, Manager, MAX_INVENTORY_SIZE};
+    use crate::errors::{ManagerError};
+    #[test]
+    fn test_round_robin_allocator() {
+        let mut manager = Manager::new(
+            RoundRobinAllocator::default(),
+            Vec::new(),  // no filters
+        );
+
+        let result = manager.insert_item(
+            Item::new(0, "A", 1, Quality::OverSized { size: MAX_INVENTORY_SIZE })
+        );
+        assert!(result.is_ok());
+
+        let result = manager.insert_item(
+            Item::new(1, "B", 1, Quality::Normal)
+        );
+        assert!(result.is_ok());
+
+        let result = manager.insert_item(
+            Item::new(2, "C", 1, Quality::Normal)
+        );
+        assert!(result.is_ok());
+
+        println!("{:#?}", &manager);
+
+        assert_eq!(manager.get_item(0, 0, 0), Some(&Item::new(0, "A", 1, Quality::OverSized { size: MAX_INVENTORY_SIZE })));
+        assert_eq!(manager.get_item(0, 1, 0), Some(&Item::new(1, "B", 1, Quality::Normal)));
+        assert_eq!(manager.get_item(0, 1, 1), Some(&Item::new(2, "C", 1, Quality::Normal)));
+
+        assert!(manager.allocator.prev_alloc.is_some());
+        assert_eq!(manager.allocator.prev_alloc.unwrap(), Slot::from((0, 1, 1)));
+
+        let result = manager.insert_item(
+            Item::new(3, "D", 1, Quality::Normal)
+        );
+        manager.remove_item(0, 1, 0);
+        manager.remove_item(0, 1, 1);
+
+        println!("{:#?}", &manager);
+        assert!(result.is_ok());
+        assert_eq!(manager.get_item(0, 1, 2), Some(&Item::new(3, "D", 1, Quality::Normal)));
+
+        let result = manager.insert_item(
+            Item::new(4, "E", 1, Quality::OverSized { size: MAX_INVENTORY_SIZE + 1 })
+        );
+
+        assert!(result.is_err());  // failed alloc -> reset prev_alloc
+        assert!(manager.allocator.prev_alloc.is_none());
+
+        let result = manager.insert_item(
+            Item::new(5, "F", 1, Quality::OverSized {size: 2})
+        );  // fills spot opened by the two removals
+
+        assert!(result.is_ok());
+        println!("{:#?}", &manager);
+        assert_eq!(manager.get_item(0, 1, 0), Some(&Item::new(5, "F", 1, Quality::OverSized {size: 2})));
+
+
+    }
+
+
+
 }

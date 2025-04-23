@@ -1,12 +1,12 @@
+use allocators::{AllocStrategy, RoundRobinAllocator};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::From;
 use std::fmt::{Debug, Display};
-use allocators::{AllocStrategy, RoundRobinAllocator};
 
-mod errors;
 mod allocators;
+mod errors;
 mod filters;
 
 use crate::errors::ManagerError::FilteredItem;
@@ -181,6 +181,15 @@ impl Display for Item {
 impl Debug for Item {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
+    }
+}
+
+impl PartialEq for Item {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.name == other.name
+            && self.quantity == other.quantity
+            && self.quality == other.quality
     }
 }
 
