@@ -495,9 +495,9 @@ fn main() {
             "Insert item",
             "Remove item",
             "Locate item",
-            "Find items by ID",
-            "Find items by name",
-            "Find expired items",
+            "Count items by ID",
+            "Count items by name",
+            "List expired items",
             "List all items",
             "Quit",
         ];
@@ -606,12 +606,52 @@ fn main() {
                         println!("{}", style("Not found!").red());
                     }
                 }
+            },
+            3 => {
+                let id: usize = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input ID: ")
+                    .interact_text()
+                    .unwrap();
+                let count = manager.count_id(id);
+                println!("{} {}", style("Number of occurrences: ").green(), count);
+            },
+            4 => {
+                let name: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input name: ")
+                    .interact_text()
+                    .unwrap();
+                let count = manager.count_name(name.as_str());
+                println!("{} {}", style("Number of occurrences: ").green(), count);
+            },
+            5 => {
+                let exp_date: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Input date (%Y-%m-%d %H:%M:%S): ")
+                    .default(Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
+                    .interact_text()
+                    .unwrap();
+                let exp_date = NaiveDateTime::parse_from_str(
+                    exp_date.as_str(), "%Y-%m-%d %H:%M:%S"
+                ).unwrap();
+                let exp_date = Local.from_local_datetime(&exp_date).unwrap();
+                let expired = manager.find_expired(exp_date);
+                println!("{} {:#?}", style("Expired items: ").red(), expired);
+            },
+            6 => {
+                let all_items = manager.ord_by_name();
+                println!("{} {:#?}", style("All items: ").green(), all_items);
+            },
+            7 => {
+                if Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Do you really want to quit?")
+                    .interact()
+                    .unwrap()
+                {
+                    break;
+                } else {
+                    continue;
+                }
             }
             _ => unimplemented!()
         };
-
-
     }
-
-
 }
