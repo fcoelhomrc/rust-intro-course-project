@@ -1,7 +1,7 @@
+use crate::{Item, MAX_INVENTORY_SIZE, Quality, Slot};
+use itertools::{Itertools, iproduct};
 use std::collections::HashMap;
-use itertools::{iproduct, Itertools};
 use std::fmt::{Debug, Display};
-use crate::{Item, Quality, Slot, MAX_INVENTORY_SIZE};
 
 // TODO: should be selectable AT COMPILE TIME
 pub trait AllocStrategy: Display + Debug {
@@ -104,8 +104,8 @@ impl AllocStrategy for RoundRobinAllocator {
             match &item.quality {
                 Quality::Normal | Quality::OverSized { .. } => {
                     self.set_prev_alloc(Some(slot)); // Slot is Copy
-                    return Some(slot)
-                },
+                    return Some(slot);
+                }
                 Quality::Fragile { max_row, .. } if &slot.row <= max_row => {
                     self.set_prev_alloc(Some(slot)); // Slot is Copy
                     return Some(slot);
@@ -181,68 +181,182 @@ impl AllocStrategy for GreedyAllocator {
 
 #[cfg(test)]
 mod tests {
-    use super::{RoundRobinAllocator, GreedyAllocator};
-    use crate::{Item, Slot, Quality, Manager, MAX_INVENTORY_SIZE};
-    use crate::errors::{ManagerError};
+    use super::{GreedyAllocator, RoundRobinAllocator};
+    use crate::errors::ManagerError;
+    use crate::{Item, MAX_INVENTORY_SIZE, Manager, Quality, Slot};
+    use chrono::{Local, NaiveDateTime, TimeZone};
     #[test]
     fn test_round_robin_allocator() {
         let mut manager = Manager::new(
             RoundRobinAllocator::default(),
-            Vec::new(),  // no filters
+            Vec::new(), // no filters
         );
 
-        let result = manager.insert_item(
-            Item::new(0, "A", 1, Quality::OverSized { size: MAX_INVENTORY_SIZE })
-        );
+        let result = manager.insert_item(Item::new(
+            0,
+            "A",
+            1,
+            Quality::OverSized {
+                size: MAX_INVENTORY_SIZE,
+            },
+        ));
         assert!(result.is_ok());
 
-        let result = manager.insert_item(
-            Item::new(1, "B", 1, Quality::Normal)
-        );
+        let result = manager.insert_item(Item::new(1, "B", 1, Quality::Normal));
         assert!(result.is_ok());
 
-        let result = manager.insert_item(
-            Item::new(2, "C", 1, Quality::Normal)
-        );
+        let result = manager.insert_item(Item::new(2, "C", 1, Quality::Normal));
         assert!(result.is_ok());
 
-        println!("{:#?}", &manager);
-
-        assert_eq!(manager.get_item(0, 0, 0), Some(&Item::new(0, "A", 1, Quality::OverSized { size: MAX_INVENTORY_SIZE })));
-        assert_eq!(manager.get_item(0, 1, 0), Some(&Item::new(1, "B", 1, Quality::Normal)));
-        assert_eq!(manager.get_item(0, 1, 1), Some(&Item::new(2, "C", 1, Quality::Normal)));
+        assert_eq!(
+            manager.get_item(0, 0, 0),
+            Some(&Item::new(
+                0,
+                "A",
+                1,
+                Quality::OverSized {
+                    size: MAX_INVENTORY_SIZE
+                }
+            ))
+        );
+        assert_eq!(
+            manager.get_item(0, 1, 0),
+            Some(&Item::new(1, "B", 1, Quality::Normal))
+        );
+        assert_eq!(
+            manager.get_item(0, 1, 1),
+            Some(&Item::new(2, "C", 1, Quality::Normal))
+        );
 
         assert!(manager.allocator.prev_alloc.is_some());
         assert_eq!(manager.allocator.prev_alloc.unwrap(), Slot::from((0, 1, 1)));
 
-        let result = manager.insert_item(
-            Item::new(3, "D", 1, Quality::Normal)
-        );
+        let result = manager.insert_item(Item::new(3, "D", 1, Quality::Normal));
         manager.remove_item(0, 1, 0);
         manager.remove_item(0, 1, 1);
 
         println!("{:#?}", &manager);
         assert!(result.is_ok());
-        assert_eq!(manager.get_item(0, 1, 2), Some(&Item::new(3, "D", 1, Quality::Normal)));
-
-        let result = manager.insert_item(
-            Item::new(4, "E", 1, Quality::OverSized { size: MAX_INVENTORY_SIZE + 1 })
+        assert_eq!(
+            manager.get_item(0, 1, 2),
+            Some(&Item::new(3, "D", 1, Quality::Normal))
         );
 
-        assert!(result.is_err());  // failed alloc -> reset prev_alloc
+        let result = manager.insert_item(Item::new(
+            4,
+            "E",
+            1,
+            Quality::OverSized {
+                size: MAX_INVENTORY_SIZE + 1,
+            },
+        ));
+
+        assert!(result.is_err()); // failed alloc -> reset prev_alloc
         assert!(manager.allocator.prev_alloc.is_none());
 
-        let result = manager.insert_item(
-            Item::new(5, "F", 1, Quality::OverSized {size: 2})
-        );  // fills spot opened by the two removals
+        let result = manager.insert_item(Item::new(5, "F", 1, Quality::OverSized { size: 2 })); // fills spot opened by the two removals
 
         assert!(result.is_ok());
         println!("{:#?}", &manager);
-        assert_eq!(manager.get_item(0, 1, 0), Some(&Item::new(5, "F", 1, Quality::OverSized {size: 2})));
-
-
+        assert_eq!(
+            manager.get_item(0, 1, 0),
+            Some(&Item::new(5, "F", 1, Quality::OverSized { size: 2 }))
+        );
     }
 
+    #[test]
+    fn test_greedy_allocator() {
+        let mut manager = Manager::new(
+            GreedyAllocator {},
+            Vec::new(), // no filters
+        );
 
+        let result = manager.insert_item(Item::new(
+            0,
+            "A",
+            1,
+            Quality::OverSized {
+                size: MAX_INVENTORY_SIZE,
+            },
+        ));
+        assert!(result.is_ok());
 
+        let result = manager.insert_item(Item::new(1, "B", 1, Quality::Normal));
+        assert!(result.is_ok());
+
+        let result = manager.insert_item(Item::new(2, "C", 1, Quality::Normal));
+        assert!(result.is_ok());
+
+        assert_eq!(
+            manager.get_item(0, 0, 0),
+            Some(&Item::new(
+                0,
+                "A",
+                1,
+                Quality::OverSized {
+                    size: MAX_INVENTORY_SIZE
+                }
+            ))
+        );
+        assert_eq!(
+            manager.get_item(0, 1, 0),
+            Some(&Item::new(1, "B", 1, Quality::Normal))
+        );
+        assert_eq!(
+            manager.get_item(1, 0, 0),
+            Some(&Item::new(2, "C", 1, Quality::Normal))
+        );
+
+        let result = manager.insert_item(Item::new(3, "D", 1, Quality::Normal));
+
+        assert!(result.is_ok());
+        assert_eq!(
+            manager.get_item(0, 2, 0),
+            Some(&Item::new(3, "D", 1, Quality::Normal))
+        );
+
+        let exp_date =
+            NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
+
+        let result = manager.insert_item(Item::new(
+            4,
+            "E",
+            1,
+            Quality::Fragile {
+                expiration_date: exp_date.clone(),
+                max_row: 1,
+            },
+        ));
+
+        assert!(result.is_ok());
+        assert_eq!(
+            manager.get_item(0, 1, 1),
+            Some(&Item::new(
+                4,
+                "E",
+                1,
+                Quality::Fragile {
+                    expiration_date: exp_date.clone(),
+                    max_row: 1
+                }
+            ))
+        );
+
+        let result = manager.insert_item(Item::new(5, "F", 1, Quality::Normal));
+
+        assert!(result.is_ok());
+        assert_eq!(
+            manager.get_item(2, 0, 0),
+            Some(&Item::new(5, "F", 1, Quality::Normal))
+        );
+
+        let result = manager.insert_item(Item::new(6, "G", 1, Quality::Normal));
+
+        assert!(result.is_ok());
+        assert_eq!(
+            manager.get_item(1, 0, 1),
+            Some(&Item::new(6, "G", 1, Quality::Normal))
+        );
+    }
 }
