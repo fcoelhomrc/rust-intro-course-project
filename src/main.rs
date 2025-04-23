@@ -216,13 +216,21 @@ where
         Manager {
             inventory: HashMap::new(),
             allocator,
-            filters, // TODO: impl method to initialize filter list
+            filters,
 
             map_ids: HashMap::new(),
             map_names: HashMap::new(),
             map_slots: HashMap::new(),
             map_dates: BTreeMap::new(),
         }
+    }
+
+    fn set_filters(&mut self, filters: Vec<Box<dyn Filter>>) {
+        self.filters = filters;
+    }
+
+    fn insert_filter(&mut self, filter: Box<dyn Filter>) {
+        self.filters.push(filter);
     }
 
     fn is_allowed_by_filters(&self, item: &Item) -> bool {
@@ -372,6 +380,9 @@ mod tests {
 
     #[test]
     fn test_manager() {
+        // FIXME: tbh this is not a good unit test because it relies on RoundRobin correctness
+        //        e.g. checking expected Slots after assigning items
+        //        Proper testing would require manually setting up the items in the desired slots
         let exp_date =
             NaiveDateTime::parse_from_str("2020-01-01 14:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let exp_date = Local.from_local_datetime(&exp_date).unwrap(); // DateTime<Local>
