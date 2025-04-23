@@ -1,6 +1,6 @@
+use crate::{Item, Quality, Slot};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use crate::{Item, Quality, Slot};
 
 // TODO: should be selectable AT RUN TIME
 pub trait Filter: Display + Debug {
@@ -95,5 +95,63 @@ impl Filter for BanQuality {
 impl Display for BanQuality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "BanQuality({})", self.quality)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BanQuality, Filter, LimitItemQuantity, LimitOverSized};
+    use crate::allocators::RoundRobinAllocator;
+    use crate::errors::ManagerError;
+    use crate::{Item, MAX_INVENTORY_SIZE, Manager, Quality, Slot};
+    use chrono::{Local, NaiveDateTime, TimeZone};
+    use std::char::MAX;
+    #[test]
+    fn test_filters() {
+        let mut filters = Vec::<Box<dyn Filter>>::new();
+        filters.push(Box::from(LimitOverSized::new(1)));
+        filters.push(Box::from(LimitItemQuantity::new(2, 50)));
+        filters.push(Box::from(BanQuality::new(Quality::OverSized {
+            size: MAX_INVENTORY_SIZE,
+        })));
+
+        let mut manager = Manager::new(RoundRobinAllocator::default(), filters);
+
+        // LimitOverSized
+        let allowed_item = Item::new(0, "A", 1, Quality::OverSized { size: 1 });
+
+        let result = manager.insert_item(allowed_item);
+        assert!(result.is_ok());
+
+        let forbidden_item = Item::new(1, "B", 1, Quality::OverSized { size: 2 });
+        let result = manager.insert_item(forbidden_item.clone());
+        assert!(result.is_err_and(|err| matches!(
+            err,
+            ManagerError::FilteredItem { .. }
+        )));
+
+        manager.remove_item(0, 0, 0);
+
+        // LimitItemQuantity
+        let item = Item::new(2, "C", 10, Quality::Normal);
+        for _ in 0..5 {
+            let result = manager.insert_item(item.clone());
+            assert!(result.is_ok()); // total quantity -> 50
+        };
+        let item = Item::new(2, "C", 1, Quality::Normal);
+        let result = manager.insert_item(item.clone());
+        println!("{:#?}", manager);
+        assert!(result.is_err_and(|err| matches!(
+            err,
+            ManagerError::FilteredItem { .. }
+        )));
+
+        // BanQuality
+        let forbidden_item = Item::new(3, "D", 1, Quality::OverSized { size: MAX_INVENTORY_SIZE });
+        let result = manager.insert_item(forbidden_item.clone());
+        assert!(result.is_err_and(|err| matches!(
+            err,
+            ManagerError::FilteredItem { .. }
+        )));
     }
 }

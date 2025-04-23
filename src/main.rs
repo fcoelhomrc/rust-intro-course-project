@@ -9,12 +9,10 @@ mod allocators;
 mod errors;
 mod filters;
 
-use crate::errors::ManagerError::FilteredItem;
-use errors::ManagerError;
+use crate::errors::ManagerError;
 use filters::{BanQuality, Filter, LimitItemQuantity, LimitOverSized};
-// NOTE: Quality::Fragile is handled as follows:
-//       The slot distance (Manhattan distance) must be <= Quality::Fragile { max_dist, .. }
 
+// Note: keep MAX_INVENTORY_SIZE >= 3 for cargo tests to be valid
 const MAX_INVENTORY_SIZE: usize = 3; // TODO: same for row/shelf/zone?
 
 // TODO: implement safeguards to Slot::new (e.g. MAX_INVENTORY_SIZE checks)
@@ -233,7 +231,7 @@ where
 
     fn insert_item(&mut self, item: Item) -> Result<(), ManagerError> {
         if !self.is_allowed_by_filters(&item) {
-            return Err(FilteredItem {
+            return Err(ManagerError::FilteredItem {
                 item,
                 filters: self.filters.iter().map(|v| v.to_string()).collect(),
             }); // short-circuit if some filter is triggered

@@ -20,7 +20,6 @@ pub trait AllocStrategy: Display + Debug {
         let end = slot.zone + size;
         // let end = std::cmp::min(slot.zone + size, MAX_INVENTORY_SIZE);
         // check if there are enough free zones from current position onwards
-        println!("TEST SLOT {} {}", slot.zone, end);
         let is_blocked_forward = (slot.zone..end)
             .any(|z| inventory.contains_key(&Slot::from((slot.row, slot.shelf, z))));
         if is_blocked_forward {
